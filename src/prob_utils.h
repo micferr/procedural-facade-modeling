@@ -4,16 +4,16 @@
 #include <limits>
 #include <ctime>
 
-#include "yocto\yocto_gl.h"
+#include "yocto\yocto_math.h"
 
 namespace yb {
 
 	/**
 	 * Returns a random boolean; true is returned with p probability
 	 */
-	bool bernoulli(ygl::rng_pcg32& rng, float p) {
+	bool bernoulli(ygl::rng_state& rng, float p) {
 		if (p < 0 || p > 1) throw std::exception("Invalid probability value.");
-		return ygl::next_rand1f(rng) <= p;
+		return ygl::rand1f(rng) <= p;
 	}
 
 	/**
@@ -23,7 +23,7 @@ namespace yb {
 	 * Note that the expected runtime is O(max-min)
 	 */
 	int geometric(
-		ygl::rng_pcg32& rng,
+		ygl::rng_state& rng,
 		float p,
 		unsigned min = 0,
 		unsigned max = std::numeric_limits<unsigned>::max()
@@ -42,7 +42,7 @@ namespace yb {
 	 * computes the value of a geometric r.v. with parameter p' = 1-p)
 	 */
 	int consecutive_bernoulli_successes(
-		ygl::rng_pcg32& rng,
+		ygl::rng_state& rng,
 		float p,
 		unsigned min = 0,
 		unsigned max = std::numeric_limits<unsigned>::max()
@@ -54,7 +54,7 @@ namespace yb {
 	 * Generates a sequence of n random booleans, each of which is a Bernoulli
 	 * random variable with success probability p
 	 */
-	std::vector<bool> bernoulli_seq(ygl::rng_pcg32& rng, unsigned n, float p) {
+	std::vector<bool> bernoulli_seq(ygl::rng_state& rng, unsigned n, float p) {
 		std::vector<bool> v;
 		while (n--) v.emplace_back(bernoulli(rng, p));
 		return v;
@@ -77,14 +77,14 @@ namespace yb {
 	/**
 	 * Returns a random value in [min,max) with uniform distribution
 	 */
-	float uniform(ygl::rng_pcg32& rng, float min, float max) {
-		return ygl::next_rand1f(rng)*(max - min) + min;
+	float uniform(ygl::rng_state& rng, float min, float max) {
+		return ygl::rand1f(rng)*(max - min) + min;
 	}
 
 	/**
 	 * Generates a random value with normal distribution
 	 */
-	float gaussian(ygl::rng_pcg32& rng, float mu, float sigma) {
+	float gaussian(ygl::rng_state& rng, float mu, float sigma) {
 		// Box-Muller transform's polar form.
 		// See
 		//     G.E.P. Box, M.E. Muller
@@ -98,10 +98,10 @@ namespace yb {
 		// This a simple implementation from the original Box and Muller's paper
 		// as no better license-able version was found
 
-		float u1 = ygl::next_rand1f(rng);
-		float u2 = ygl::next_rand1f(rng);
+		float u1 = ygl::rand1f(rng);
+		float u2 = ygl::rand1f(rng);
 		
-		float x1 = sqrt(-2.f*log(u1))*cos(2.f*pi*u2);
+		float x1 = sqrt(-2.f*log(u1))*cos(2.f*ygl::pi*u2);
 		return x1 * sigma + mu;
 	}
 
@@ -109,10 +109,10 @@ namespace yb {
 	 * Returns a random int in [0, weights.size()), with integer i
 	 * having a probability of being chosen of weights[i]/(sum_j weights[j])
 	 */
-	int random_weighted(ygl::rng_pcg32& rng, const std::vector<float>& weights) {
+	int random_weighted(ygl::rng_state& rng, const std::vector<float>& weights) {
 		float weights_total = 0.f;
 		for (auto w : weights) weights_total += w;
-		float r = ygl::next_rand1f(rng, 0.f, weights_total);
+		float r = ygl::rand1f(rng)*weights_total;
 		int which = 0;
 		while (r > weights[which]) {
 			r -= weights[which];
@@ -125,7 +125,7 @@ namespace yb {
 	 * Choose a random element from a vector
 	 */
 	template<typename T>
-	T choose_random(ygl::rng_pcg32& rng, const std::vector<T>& v) {
+	T choose_random(ygl::rng_state& rng, const std::vector<T>& v) {
 		return v[ygl::next_rand1i(rng, v.size())];
 	}
 
@@ -135,7 +135,7 @@ namespace yb {
 	 */
 	template<typename T>
 	T choose_random_weighted(
-		ygl::rng_pcg32& rng,
+		ygl::rng_state& rng,
 		const std::vector<T>& v,
 		const std::vector<float> weights
 	) {
@@ -165,7 +165,7 @@ namespace yb {
 	 */
 	template<typename T>
 	std::vector<std::vector<T>> random_substrings(
-		ygl::rng_pcg32& rng,
+		ygl::rng_state& rng,
 		const std::vector<T>& seq,
 		float keep_prob,
 		float continue_prob,
