@@ -15,8 +15,7 @@
 #include "yocto_utils.h"
 
 template<class Point>
-class bezier {
-public:
+struct bezier {
 	std::vector<Point> control_points;
 
 	Point compute(float t) {
@@ -37,34 +36,82 @@ public:
 	}
 };
 
-int main(int argc, char** argv) {
-	bezier<ygl::vec2f> my_bezier;
-	my_bezier.control_points.push_back({ 0,0 });
-	my_bezier.control_points.push_back({ 2,4 });
-	my_bezier.control_points.push_back({ 4,-4 });
-	my_bezier.control_points.push_back({ 6,0 });
-	for (int i = 0; i < 20; i++) {
-		float perc = float(i) / 20.f;
-		printf("%i\t%f\t%f\n", i + 1, my_bezier.compute(perc).x, my_bezier.compute(perc).y);
+template<class Point>
+class bezier_sides {
+	std::vector<bezier<Point>> sides;
+
+public:
+	bezier_sides(const std::vector<Point>& points, const std::vector<size_t> corner_ids) {
+		// Check: corners' IDs have to be strictly increasing
+		for (int i = 0; i < corner_ids.size() - 1; i++) {
+			if (corner_ids[i] >= corner_ids[i + 1]) throw std::runtime_error("Invalid corner ids");
+		}
+
+		// Check: corners' IDs in valid range
+		if (corner_ids.front() < 0 || corner_ids.back() >= points.size())
+			throw std::runtime_error("Invalid corner ids");
+
+		for (int i = 0; i < corner_ids.size()-1 ;i++) {
+			bezier<Point> b;
+			for (int j = corner_ids[i]; j <= corner_ids[i + 1]; j++) {
+				b.control_points.push_back(points[j]);
+			}
+			sides.push_back(b);
+		}
+		bezier<Point> b;
+		for (int i = corner_ids.back(); i < points.size(); i++)
+			b.control_points.push_back(points[i]);
+		for (int i = 0; i <= corner_ids.front(); i++)
+			b.control_points.push_back(points[i]);
+		sides.push_back(b);
 	}
 
-	ygl::shape sphere_shp;
-	ygl::make_cube(sphere_shp.quads, sphere_shp.pos, 5, .1f);
-	ygl::material* sphere_mat = ygl::make_material("sphere_mat");
-	std::vector<ygl::instance*> sphere_insts;
-	for (int i = 0; i < 20; i++) {
-		ygl::frame3f sphere_frame;
-		sphere_frame.o = yb::to_3d(my_bezier.compute(float(i) / 20.f));
-		sphere_insts.push_back(ygl::make_instance(
-			"sphere_inst" + std::to_string(i),
-			&sphere_shp,
-			sphere_mat,
-			sphere_frame
-		));
+	int num_sides() {
+		return sides.size();
+	}
+
+	Point compute(size_t side, float t) {
+		return sides[side].compute(t);
+	}
+};
+
+int main(int argc, char** argv) {
+	ygl::log_info("creating beziers");
+	bezier_sides<ygl::vec2f> bs(
+	{
+		{0,0},{2,4},{4,-4},{6,0},
+		{5,3},{6,6},
+		{3,10},{0,6}
+	},
+	{
+		0,3,5,7
+	}
+	);
+
+	ygl::shape cube_shp;
+	cube_shp.name = "cube_shp";
+	ygl::make_cube(cube_shp.quads, cube_shp.pos, 5, .1f);
+	ygl::material* cube_mat = ygl::make_material("cube_mat");
+	std::vector<ygl::instance*> cube_insts;
+	ygl::log_info("placing cubes");
+	for (int y = 0; y < 10; y++) {
+		for (int j = 0; j < bs.num_sides(); j++) {
+			for (int i = 0; i < 20; i++) {
+				ygl::frame3f cube_frame;
+				cube_frame.o = yb::to_3d(bs.compute(j, float(i) / 20.f), float(2*y));
+				cube_insts.push_back(ygl::make_instance(
+					"cube_inst" + std::to_string(j) + "_" + std::to_string(i),
+					&cube_shp,
+					cube_mat,
+					cube_frame
+				));
+			}
+		}
 	}
 	ygl::scene scene;
-	for (auto inst : sphere_insts) yb::add_to_scene(&scene, inst);
-	ygl::save_scene("ciao.obj", &scene);
+	ygl::log_info("saving scene");
+	for (auto inst : cube_insts) yb::add_to_scene(&scene, inst);
+	ygl::save_scene("out.obj", &scene);
 
 	return 0;
 }
