@@ -651,6 +651,7 @@ namespace yb {
 			shp->triangles.push_back({ q.z,q.w,q.x });
 		}
 		ygl::compute_normals(shp->triangles, shp->pos, shp->norm);
+		shp->quads.clear();
 	}
 }
 
