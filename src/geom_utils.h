@@ -467,34 +467,44 @@ namespace yb {
 	* TODO: Remove duplicates from shp->pos
 	*/
 	void merge_same_points(ygl::shape* shp, float eps = 0.0001f) {
-		// TO BE FIXED
-		
-		/*for (int i = 0; i < shp->pos.size(); i++) {
+		for (int i = 0; i < shp->pos.size(); i++) {
 			for (int j = i + 1; j < shp->pos.size(); j++) {
 				if (
 					ygl::length(shp->pos[i] - shp->pos[j]) < eps &&
 					(shp->color.size() == 0 || ygl::length(shp->color[i]-shp->color[j]) < eps)
 				) {
-					for (auto& t : shp->triangles) {
-						if (t.x == j) t.x = i;
-						if (t.y == j) t.y = i;
-						if (t.z == j) t.z = i;
+					if (shp->triangles.size() > 0) {
+						for (auto& t : shp->triangles) {
+							if (t.x == j) t.x = i;
+							if (t.y == j) t.y = i;
+							if (t.z == j) t.z = i;
+						}
 					}
-					for (auto& q : shp->quads) {
-						if (q.x == j) q.x = i;
-						if (q.y == j) q.y = i;
-						if (q.z == j) q.z = i;
-						if (q.w == j) q.w = i;
+					else if (shp->quads.size() > 0) {
+						for (auto& q : shp->quads) {
+							if (q.x == j) q.x = i;
+							if (q.y == j) q.y = i;
+							if (q.z == j) q.z = i;
+							if (q.w == j) q.w = i;
+						}
 					}
-					for (auto& l : shp->lines) {
-						if (l.x == j) l.x = i;
-						if (l.y == j) l.y = i;
+					else {
+						// Putting lines and points together for now
+						for (auto& l : shp->lines) {
+							if (l.x == j) l.x = i;
+							if (l.y == j) l.y = i;
+						}
+						for (auto& p : shp->points) if (p == j) p = i;
 					}
-					for (auto& p : shp->points) if (p == j) p = i;
 				}
 			}
 		}
-		shp->norm = ygl::compute_normals(shp->lines, shp->triangles, shp->quads, shp->pos);*/
+		if (shp->triangles.size() > 0) {
+			ygl::compute_normals(shp->triangles, shp->pos, shp->norm);
+		}
+		else if (shp->quads.size() > 0) {
+			ygl::compute_normals(shp->quads, shp->pos, shp->norm);
+		}
 	}
 
 	/**
