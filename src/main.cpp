@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
 	const float BUILDING_HEIGHT = 20.f;
 	const bool DO_VERTICAL_BEZIER = true;
 	const bool DO_VERTICAL_ROTATION = true;
-	const bool DO_MERGE_SAME_POINTS = true;
+	const bool DO_MERGE_SAME_POINTS = false;
 
 	ygl::log_info("creating beziers");
 	bezier_sides<ygl::vec2f> bs(
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
 		{0,BUILDING_HEIGHT,0}
 	};
 
-	// Rotation of x and z coordinates, in radiants, along y-axis
+	// Rotation of x and z coordinates, in radiants, around y-axis
 	auto rotation_path = [](float t){return 3.f*t;};
 
 	auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
 
 	if (DO_MERGE_SAME_POINTS) {
 		ygl::log_info("merging overlapping points");
-		yb::merge_same_points(&building_shp,0.f);
+		yb::merge_same_points(&building_shp);
 	}
 	ygl::log_info("recomputing normals");
 	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
