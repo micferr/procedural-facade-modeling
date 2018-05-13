@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
 	const float BUILDING_HEIGHT = 20.f;
 	const bool DO_VERTICAL_BEZIER = true;
 	const bool DO_VERTICAL_ROTATION = true;
-	const bool DO_MERGE_SAME_POINTS = false;
+	const bool DO_MERGE_SAME_POINTS = true;
 
 	ygl::log_info("creating beziers");
 	bezier_sides<ygl::vec2f> bs(
@@ -147,10 +147,13 @@ int main(int argc, char** argv) {
 	}
 	ygl::log_info("converting to triangle mesh");
 	yb::to_triangle_mesh(&building_shp);
+
 	// Floor
-	/*std::vector<ygl::vec3f> floor_border;
-	for (int i = 0; i < building_shp.pos.size(); i += 4) {
-		floor_border.push_back(building_shp.pos[i]);
+	std::vector<ygl::vec3f> floor_border;
+	for (int side = 0; side < bs.num_sides(); side++) {
+		for (int i = 0; i < SEGMENTS_PER_BEZIER; i++) {
+			floor_border.push_back(compute_position(side, float(i)/SEGMENTS_PER_BEZIER_F, 0.f));
+		}
 	}
 	std::vector<ygl::vec3f> floor_pos;
 	std::vector<ygl::vec3i> floor_triangles;
@@ -159,15 +162,27 @@ int main(int argc, char** argv) {
 	building_shp.pos.insert(building_shp.pos.end(), floor_pos.begin(), floor_pos.end());
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
+
 	// Roof
-	for (const auto& p : floor_pos)
-		building_shp.pos.push_back(p + ygl::vec3f{0, 20.f, 0});
-	bps += floor_pos.size();
+	floor_border.clear();
+	for (int side = 0; side < bs.num_sides(); side++) {
+		for (int i = 0; i < SEGMENTS_PER_BEZIER; i++) {
+			floor_border.push_back(compute_position(side, float(i) / SEGMENTS_PER_BEZIER_F, 1.f));
+		}
+	}
+	floor_pos.clear();
+	floor_triangles.clear();
+	std::tie(floor_triangles, floor_pos) = yb::triangulate(floor_border);
+	bps = building_shp.pos.size();
+	building_shp.pos.insert(building_shp.pos.end(), floor_pos.begin(), floor_pos.end());
+	for (int i = bps; i < building_shp.pos.size(); i++) 
+		building_shp.pos[i].y = compute_position(0,0,1.f).y;
 	for (const auto& t : floor_triangles)
-		building_shp.triangles.push_back({t.z + bps, t.y + bps, t.x + bps});*/
+		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
+
 	if (DO_MERGE_SAME_POINTS) {
 		ygl::log_info("merging overlapping points");
-		yb::merge_same_points(&building_shp);
+		yb::merge_same_points(&building_shp,0.f);
 	}
 	ygl::log_info("recomputing normals");
 	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
