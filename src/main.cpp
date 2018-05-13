@@ -76,6 +76,13 @@ public:
 };
 
 int main(int argc, char** argv) {
+	const int SEGMENTS_PER_BEZIER = 40;
+	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER);
+	const float BUILDING_HEIGHT = 20.f;
+	const bool DO_VERTICAL_BEZIER = true;
+	const bool DO_VERTICAL_ROTATION = true;
+	const bool DO_MERGE_SAME_POINTS = false;
+
 	ygl::log_info("creating beziers");
 	bezier_sides<ygl::vec2f> bs(
 	{
@@ -94,51 +101,46 @@ int main(int argc, char** argv) {
 		{8,5,8},
 		{16,10,0},
 		{-20,15,-8},
-		{0,20,0}
+		{0,BUILDING_HEIGHT,0}
 	};
 
 	// Rotation of x and z coordinates, in radiants, along y-axis
 	auto rotation_path = [](float t){return 3.f*t;};
 
-	const int SEGMENTS_PER_BEZIER = 40;
-	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER);
-	const bool DO_VERTICAL_BEZIER = true;
-	const bool DO_VERTICAL_ROTATION = true;
-	const bool DO_MERGE_SAME_POINTS = true;
+	auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
+		auto xz = bs.compute(side, x_t);
+		auto offset = DO_VERTICAL_BEZIER ? vertical_path.compute(y_t) : ygl::vec3f{0, BUILDING_HEIGHT*y_t, 0};
+		if (DO_VERTICAL_ROTATION) {
+			auto dist = ygl::length(xz);
+			auto angle = yb::get_angle(xz);
+			angle += rotation_path(y_t);
+			xz.x = dist*cosf(angle);
+			xz.y = dist*sinf(angle);
+		}
+		return yb::to_3d(xz) + offset;
+	};
 
 	// Building 
 	ygl::log_info("creating building mesh");
 	ygl::shape building_shp;
 	building_shp.name = "building_shp";
-	for (int side = 0; side < bs.num_sides(); side++) {
-		for (int y = 0; y < SEGMENTS_PER_BEZIER; y++) {
-			for (int i = 0; i < SEGMENTS_PER_BEZIER; i++) {
-				auto offset = vertical_path.compute(float(y) / SEGMENTS_PER_BEZIER_F);
-				auto next_offset = vertical_path.compute(float(y + 1) / SEGMENTS_PER_BEZIER_F);
 
-				auto rot = rotation_path(float(y) / SEGMENTS_PER_BEZIER_F);
-				auto next_rot = rotation_path(float(y+1) / SEGMENTS_PER_BEZIER_F);
+	for (int y = 0; y < SEGMENTS_PER_BEZIER; y++) {
+		auto y_t = float(y) / SEGMENTS_PER_BEZIER_F;
+		auto next_y_t = float(y + 1) / SEGMENTS_PER_BEZIER_F;
 
+		for (int i = 0; i < SEGMENTS_PER_BEZIER; i++) {
+			auto x_t = float(i) / SEGMENTS_PER_BEZIER_F;
+			auto next_x_t = float(i + 1) / SEGMENTS_PER_BEZIER_F;
+
+			for (int side = 0; side < bs.num_sides(); side++) {
 				// NB: duplicate points for simplicity
-				building_shp.pos.push_back(yb::to_3d(bs.compute(side, float(i) / SEGMENTS_PER_BEZIER_F)));
-				building_shp.pos.push_back(yb::to_3d(bs.compute(side, float(i + 1) / SEGMENTS_PER_BEZIER_F)));
-				building_shp.pos.push_back(yb::to_3d(bs.compute(side, float(i + 1) / SEGMENTS_PER_BEZIER_F)));
-				building_shp.pos.push_back(yb::to_3d(bs.compute(side, float(i) / SEGMENTS_PER_BEZIER_F)));
-				
+				building_shp.pos.push_back(compute_position(side, x_t, y_t));
+				building_shp.pos.push_back(compute_position(side, next_x_t, y_t));
+				building_shp.pos.push_back(compute_position(side, next_x_t, next_y_t));
+				building_shp.pos.push_back(compute_position(side, x_t, next_y_t));
+
 				int base = building_shp.pos.size() - 4;
-				for (int k = 0; k < 4; k++) {
-					if (DO_VERTICAL_ROTATION) {
-						auto dist = ygl::length(yb::to_2d(building_shp.pos[base + k]));
-						auto angle = yb::get_angle({ building_shp.pos[base + k].x, building_shp.pos[base + k].z });
-						angle += (k < 2 ? rot : next_rot);
-						building_shp.pos[base + k].x = dist*cosf(angle);
-						building_shp.pos[base + k].z = dist*sinf(angle);
-					}
-					
-					if (DO_VERTICAL_BEZIER) {
-						building_shp.pos[base + k] += k < 2 ? offset : next_offset;
-					}
-				}
 				building_shp.quads.push_back({ base, base + 1, base + 2, base + 3 });
 			}
 		}
@@ -180,25 +182,16 @@ int main(int argc, char** argv) {
 	std::vector<ygl::instance*> cube_insts;
 	ygl::log_info("placing cubes");
 	for (int y = 0; y < 10; y++) {
-		for (int j = 0; j < bs.num_sides(); j++) {
-			for (int i = 0; i < 20; i++) {
-				auto t = float(y) / 10.f + 0.05f;
+		auto y_t = float(y) / 10.f + 0.05f;
 
-				auto pos = yb::to_3d(bs.compute(j, float(i) / 20.f));
-				if (DO_VERTICAL_ROTATION) {
-					float angle = yb::get_angle({ pos.x, pos.z });
-					float dist = ygl::length(pos);
-					angle += rotation_path(t);
-					pos.x = dist*cosf(angle);
-					pos.z = dist*sinf(angle);
-				}
+		for (int i = 0; i < 20; i++) {
+			auto x_t = float(i) / 20.f;
+
+			for (int side = 0; side < bs.num_sides(); side++) {
 				ygl::frame3f cube_frame;
-				cube_frame.o = pos;
-				if (DO_VERTICAL_BEZIER) {
-					cube_frame.o += vertical_path.compute(t);
-				}
+				cube_frame.o = compute_position(side, x_t, y_t);
 				cube_insts.push_back(ygl::make_instance(
-					"cube_inst" + std::to_string(j) + "_" + std::to_string(i),
+					"cube_inst" + std::to_string(side) + "_" + std::to_string(i),
 					&cube_shp,
 					cube_mat,
 					cube_frame
@@ -206,6 +199,7 @@ int main(int argc, char** argv) {
 			}
 		}
 	}
+
 	ygl::scene scene;
 	ygl::log_info("saving scene");
 	for (auto inst : cube_insts) yb::add_to_scene(&scene, inst);
