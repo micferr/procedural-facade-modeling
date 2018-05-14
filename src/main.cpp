@@ -18,7 +18,7 @@ template<class point>
 struct bezier {
 	std::vector<point> control_points;
 
-	point compute(float t) {
+	point compute(float t) const {
 		auto n = control_points.size();
 		if (n == 0) return { 0,0 };
 
@@ -35,6 +35,21 @@ struct bezier {
 		return points[0];
 	}
 };
+
+template<class point>
+bezier<point> bezier_derivative(const bezier<point>& bez) {
+	bezier<point> b;
+
+	auto n = bez.control_points.size();
+	for (auto i = 0; i < n - 1; i++) {
+		const auto& curr = bez.control_points[i];
+		const auto& next = bez.control_points[i + 1];
+		const auto& cp = next - curr;
+		b.control_points.push_back(n*cp);
+	}
+
+	return b;
+}
 
 template<class point>
 class bezier_sides {
@@ -76,11 +91,24 @@ public:
 };
 
 int main(int argc, char** argv) {
+	// Number of segments to split each bezier in when rendering
 	const int SEGMENTS_PER_BEZIER = 40;
-	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER);
+	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER); // Utility
+
+	// Absolute value, in world coordinates, of the building
 	const float BUILDING_HEIGHT = 20.f;
+
+	// Whether the floors' extrusion follows a bezier path
 	const bool DO_VERTICAL_BEZIER = true;
+
+	// Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
+	// to the bezier's derivative
+	const bool INCLINED_FLOORS = true;
+
+	// Whether the building rotates around itself
 	const bool DO_VERTICAL_ROTATION = true;
+
+	// Whether to merge overlapping vertices
 	const bool DO_MERGE_SAME_POINTS = false;
 
 	ygl::log_info("creating beziers");
@@ -103,13 +131,13 @@ int main(int argc, char** argv) {
 		{-20,15,-8},
 		{0,BUILDING_HEIGHT,0}
 	};
+	auto vert_derivative = bezier_derivative(vertical_path);
 
 	// Rotation of x and z coordinates, in radiants, around y-axis
 	auto rotation_path = [](float t){return 3.f*t;};
 
 	auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
 		auto xz = bs.compute(side, x_t);
-		auto offset = DO_VERTICAL_BEZIER ? vertical_path.compute(y_t) : ygl::vec3f{0, BUILDING_HEIGHT*y_t, 0};
 		if (DO_VERTICAL_ROTATION) {
 			auto dist = ygl::length(xz);
 			auto angle = yb::get_angle(xz);
@@ -117,7 +145,32 @@ int main(int argc, char** argv) {
 			xz.x = dist*cosf(angle);
 			xz.y = dist*sinf(angle);
 		}
-		return yb::to_3d(xz) + offset;
+		auto pos = yb::to_3d(xz);
+		if (DO_VERTICAL_BEZIER) {
+			if (INCLINED_FLOORS) {
+				// Taken with appreciation ( <3 ) from:
+				// https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+				auto y_axis = ygl::vec3f{ 0,1,0 };
+				auto incl = ygl::normalize(vert_derivative.compute(y_t));
+
+				auto v = ygl::cross(y_axis, incl);
+				auto s = ygl::length(v);
+				auto c = ygl::dot(y_axis, incl);
+
+				if (c != 0.f) {
+					auto vx = ygl::mat3f{ {0,v.z,-v.y},{-v.z,0,v.x},{v.y,-v.x,0} };
+					auto R = ygl::identity_mat3f + vx + ((vx*vx)*(1 / (1 + c)));
+					pos = R*pos;
+				}
+			}
+			auto offset = vertical_path.compute(y_t);
+			pos += offset;
+		}
+		else {
+			pos.y = BUILDING_HEIGHT*y_t;
+		}
+
+		return pos;
 	};
 
 	// Building 
