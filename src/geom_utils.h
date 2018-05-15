@@ -331,7 +331,6 @@ namespace yb {
 		return { triangles, pos };
 	}
 
-	// NB: The points' y coordinate is discarded and then assumed to be 0
 	std::tuple<std::vector<ygl::vec3i>, std::vector<ygl::vec3f>>
 		triangulate(
 			const std::vector<ygl::vec3f>& border,
@@ -340,7 +339,22 @@ namespace yb {
 		std::vector<std::vector<ygl::vec2f>> _holes;
 		for (const auto& h : holes) _holes.push_back(to_2d(h));
 		auto tt = triangulate(to_2d(border), _holes);
-		return { std::get<0>(tt), to_3d(std::get<1>(tt)) };
+
+		// Find plane equation
+		auto points = to_3d(std::get<1>(tt));
+		// Already assumed non-collinear for triangulation
+		auto p1 = border[0], p2 = border[1], p3 = border[2];
+		auto p12 = p2 - p1, p13 = p3 - p1;
+		auto pn = ygl::cross(p12, p13);
+		auto d = ygl::dot(p1, pn);
+		if (pn.y != 0.f) {
+			for (auto& p : points) {
+				p.y = (d - pn.x*p.x - pn.z*p.z) / pn.y;
+			}
+		}
+
+		return { std::get<0>(tt), points };
+		//return { std::get<0>(tt), to_3d(std::get<1>(tt)) };
 	}
 
 	/**
