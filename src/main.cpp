@@ -228,8 +228,6 @@ int main(int argc, char** argv) {
 	std::tie(floor_triangles, floor_pos) = yb::triangulate(floor_border);
 	bps = building_shp.pos.size();
 	building_shp.pos.insert(building_shp.pos.end(), floor_pos.begin(), floor_pos.end());
-	for (int i = bps; i < building_shp.pos.size(); i++) 
-		building_shp.pos[i].y = compute_position(0,0,1.f).y;
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
