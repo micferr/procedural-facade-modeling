@@ -90,12 +90,49 @@ public:
 	}
 };
 
+
+struct tagged_shape : public ygl::shape {
+	struct tag {
+		int face_id; // Which face the vertex belongs to
+		ygl::vec2f face_coord; // Usually a [0;1]x[0,1] coordinate relative to the face
+	};
+
+	std::vector<tag> vertex_tags;
+
+	std::set<int> face_ids() {
+		std::set<int> ids;
+		for (const auto& t : vertex_tags)
+			ids.insert(t.face_id);
+		return ids;
+	}
+
+	// Non-cached, inefficient
+	int num_faces() {
+		return face_ids().size();
+	}
+
+	// Returns an unused id for a new face
+	int get_new_id() {
+		return get_new_ids(1)[0];
+	}
+
+	// Returns n unused ids for new faces
+	std::vector<int> get_new_ids(int n) {
+		auto ids = face_ids();
+		std::vector<int> new_ids;
+		for (auto i = 0;;i++) {
+			if (ids.count(i) == 0) new_ids.push_back(i);
+		}
+		return new_ids;
+	}
+};
+
 int main(int argc, char** argv) {
 	// Number of segments to split each bezier in when rendering
 	const int SEGMENTS_PER_BEZIER = 40;
 	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER); // Utility
 
-	// Absolute value, in world coordinates, of the building
+	// Building's height when DO_VERTICAL_BEZIER == false
 	const float BUILDING_HEIGHT = 20.f;
 
 	// Whether the floors' extrusion follows a bezier path
@@ -109,6 +146,7 @@ int main(int argc, char** argv) {
 	const bool DO_VERTICAL_ROTATION = true;
 
 	// Whether to merge overlapping vertices
+	// NB: Do not use on tagged_shapes
 	const bool DO_MERGE_SAME_POINTS = false;
 
 	ygl::log_info("creating beziers");
@@ -126,10 +164,9 @@ int main(int argc, char** argv) {
 	bezier<ygl::vec3f> vertical_path;
 	vertical_path.control_points = {
 		{0,0,0},
-		{8,5,8},
-		{16,10,0},
-		{-20,15,-8},
-		{0,BUILDING_HEIGHT,0}
+		{20,10,0},
+		{20,20,20},
+		{10,35,-10}
 	};
 	auto vert_derivative = bezier_derivative(vertical_path);
 
@@ -175,9 +212,10 @@ int main(int argc, char** argv) {
 
 	// Building 
 	ygl::log_info("creating building mesh");
-	ygl::shape building_shp;
+	tagged_shape building_shp;
 	building_shp.name = "building_shp";
 
+	auto facade_face_ids = building_shp.get_new_ids(bs.num_sides());
 	for (int y = 0; y < SEGMENTS_PER_BEZIER; y++) {
 		auto y_t = float(y) / SEGMENTS_PER_BEZIER_F;
 		auto next_y_t = float(y + 1) / SEGMENTS_PER_BEZIER_F;
@@ -187,6 +225,12 @@ int main(int argc, char** argv) {
 			auto next_x_t = float(i + 1) / SEGMENTS_PER_BEZIER_F;
 
 			for (int side = 0; side < bs.num_sides(); side++) {
+				auto face_id = facade_face_ids[side];
+				building_shp.vertex_tags.push_back({ face_id, {x_t, y_t} });
+				building_shp.vertex_tags.push_back({ face_id, {next_x_t, y_t} });
+				building_shp.vertex_tags.push_back({ face_id, {next_x_t, next_y_t} });
+				building_shp.vertex_tags.push_back({ face_id, {x_t, next_y_t} });
+
 				// NB: duplicate points for simplicity
 				building_shp.pos.push_back(compute_position(side, x_t, y_t));
 				building_shp.pos.push_back(compute_position(side, next_x_t, y_t));
@@ -200,8 +244,14 @@ int main(int argc, char** argv) {
 	}
 	ygl::log_info("converting to triangle mesh");
 	yb::to_triangle_mesh(&building_shp);
+	
+	if (DO_MERGE_SAME_POINTS) {
+		ygl::log_info("merging overlapping points");
+		yb::merge_same_points(&building_shp);
+	}
 
 	// Floor
+	ygl::log_info("floor and roof");
 	std::vector<ygl::vec3f> floor_border;
 	for (int side = 0; side < bs.num_sides(); side++) {
 		for (int i = 0; i < SEGMENTS_PER_BEZIER; i++) {
@@ -231,10 +281,6 @@ int main(int argc, char** argv) {
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
-	if (DO_MERGE_SAME_POINTS) {
-		ygl::log_info("merging overlapping points");
-		yb::merge_same_points(&building_shp);
-	}
 	ygl::log_info("recomputing normals");
 	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
 	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 1.f,0.3f,0.3f });
