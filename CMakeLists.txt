@@ -115,10 +115,12 @@ target_link_libraries(main yocto_gl poly2tri clipper)
 
 if(YOCTO_OPENGL)
     add_executable(yview src/apps/yview.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
+	add_executable(yiview src/apps/yiview.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
     add_executable(yitrace src/apps/yitrace.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
     add_executable(yimview src/apps/yimview.cpp)
 
     target_link_libraries(yview yocto_gl)
+	target_link_libraries(yiview yocto_gl poly2tri clipper)
     target_link_libraries(yitrace yocto_gl)
     target_link_libraries(yimview yocto_gl)
 endif(YOCTO_OPENGL)

@@ -263,6 +263,8 @@ int main(int argc, char** argv) {
 	std::tie(floor_triangles, floor_pos) = yb::triangulate_opposite(floor_border);
 	int bps = building_shp.pos.size();
 	building_shp.pos.insert(building_shp.pos.end(), floor_pos.begin(), floor_pos.end());
+	for (int i = 0, id = building_shp.get_new_id(); i < floor_pos.size(); i++)
+		building_shp.vertex_tags.push_back({ id, {0.f, 0.f} });
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
@@ -278,6 +280,8 @@ int main(int argc, char** argv) {
 	std::tie(floor_triangles, floor_pos) = yb::triangulate(floor_border);
 	bps = building_shp.pos.size();
 	building_shp.pos.insert(building_shp.pos.end(), floor_pos.begin(), floor_pos.end());
+	for (int i = 0, id = building_shp.get_new_id(); i < floor_pos.size(); i++)
+		building_shp.vertex_tags.push_back({ id, { 0.f, 0.f } });
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
