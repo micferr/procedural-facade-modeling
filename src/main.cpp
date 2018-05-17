@@ -79,6 +79,17 @@ struct tagged_shape : public ygl::shape {
 
 tagged_shape building_shp;
 std::map<int, bool> is_face_highlighted;
+bool show_facecoord_heatmap = false;
+
+void inflate_by_facecoord_heatmap(float bump_factor) {
+	for (auto i = 0; i < building_shp.pos.size(); i++) {
+		auto intensity = 1.f - std::max(
+			fabs(0.5f - building_shp.vertex_tags[i].face_coord.x),
+			fabs(0.5f - building_shp.vertex_tags[i].face_coord.y)
+		)*2.f;
+		building_shp.pos[i] += building_shp.norm[i] * intensity * bump_factor;
+	}
+}
 
 // Application state
 struct app_state {
@@ -229,8 +240,13 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						ygl::vec4f{ 1.f, 0.f, 0.f, 1.f } : ygl::vec4f{ 1.f, 1.f, 1.f, 1.f };
 					for (int i = 0; i < building_shp.pos.size(); i++) {
 						auto fid = building_shp.vertex_tags[i].face_id;
-						if (fid == kv.first) {
-							building_shp.color[i] = color;
+						building_shp.color[i] =
+							building_shp.vertex_tags[i].face_id == kv.first ? 
+							color : ygl::vec4f{1.f, 1.f, 1.f, 1.f};
+					}
+					for (auto& kv2 : is_face_highlighted) {
+						if (kv.first != kv2.first) {
+							kv2.second = false;
 						}
 					}
 					ygl::update_gldata(app->scn);
@@ -239,8 +255,6 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			ygl::end_glwidgets_tree(win);
 		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
-			static bool show_facecoord_heatmap = false;
-
 			if (ygl::draw_glwidgets_checkbox(win, "show face coord heatmap", show_facecoord_heatmap)) {
 				if (show_facecoord_heatmap) {
 					for (int i = 0; i < building_shp.pos.size(); i++) {
@@ -256,6 +270,14 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					for (auto& c : building_shp.color) c = { 1.f,1.f,1.f,1.f };
 				}
 				for (auto& is : is_face_highlighted) is.second = false;
+				ygl::update_gldata(app->scn);
+			}
+			if (ygl::draw_glwidgets_button(win, "inflate faces by face coord heatmap")) {
+				inflate_by_facecoord_heatmap(1.f);
+				ygl::update_gldata(app->scn);
+			}
+			if (ygl::draw_glwidgets_button(win, "deflate faces by face coord heatmap")) {
+				inflate_by_facecoord_heatmap(-1.f);
 				ygl::update_gldata(app->scn);
 			}
 		}
@@ -485,7 +507,7 @@ int main(int argc, char* argv[]) {
 
 	// Whether to merge overlapping vertices
 	// NB: Do not use on tagged_shapes
-	const bool DO_MERGE_SAME_POINTS = false;
+	const bool DO_MERGE_SAME_POINTS = true;
 
 	ygl::log_info("creating beziers");
 	bezier_sides<ygl::vec2f> bs(
