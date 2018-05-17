@@ -545,7 +545,6 @@ int main(int argc, char* argv[]) {
 	const bool DO_VERTICAL_ROTATION = true;
 
 	// Whether to merge overlapping vertices
-	// NB: Do not use on tagged_shapes
 	const bool DO_MERGE_SAME_POINTS = true;
 
 	ygl::log_info("creating beziers");
