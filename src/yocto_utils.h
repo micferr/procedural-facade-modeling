@@ -1,6 +1,7 @@
 #ifndef YOCTO_UTILS_H
 #define YOCTO_UTILS_H
 
+#include "yocto\yocto_image.h"
 #include "yocto\yocto_math.h"
 #include "yocto\yocto_obj.h"
 #include "yocto\yocto_scene.h"
