@@ -28,10 +28,7 @@
 
 #include <set>
 
-#include "../yocto/yocto_glutils.h"
-#include "../yocto/yocto_image.h"
-#include "../yocto/yocto_scene.h"
-#include "../yocto/yocto_utils.h"
+#include "../yocto_utils.h"
 #include "yapp_ui.h"
 using namespace std::literals;
 
@@ -232,6 +229,28 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					}
 					ygl::update_gldata(app->scn);
 				}
+			}
+			ygl::end_glwidgets_tree(win);
+		}
+		if (ygl::begin_glwidgets_tree(win, "other")) {
+			static bool show_facecoord_heatmap = false;
+
+			if (ygl::draw_glwidgets_checkbox(win, "show face coord heatmap", show_facecoord_heatmap)) {
+				if (show_facecoord_heatmap) {
+					for (int i = 0; i < building_shp.pos.size(); i++) {
+						auto intensity =
+							1.f - std::max(
+								fabs(0.5f - building_shp.vertex_tags[i].face_coord.x),
+								fabs(0.5f - building_shp.vertex_tags[i].face_coord.y)
+							)*2.f;
+						building_shp.color[i] = { intensity, intensity, intensity, 1.f };
+					}
+				}
+				else {
+					for (auto& c : building_shp.color) c = { 1.f,1.f,1.f,1.f };
+				}
+				for (auto& is : is_face_highlighted) is.second = false;
+				ygl::update_gldata(app->scn);
 			}
 		}
 	}
