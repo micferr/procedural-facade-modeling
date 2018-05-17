@@ -75,6 +75,45 @@ struct tagged_shape : public ygl::shape {
 		}
 		return new_ids;
 	}
+
+	void merge_same_points(float eps = 0.0001f, float max_zero = 0.0001f, float min_one = 0.9999f) {
+		for (int i = 0; i < pos.size(); i++) {
+			for (int j = i + 1; j < pos.size(); j++) {
+				// If a vertex is part of a face border, don't merge it or onto it
+				auto tag = vertex_tags[i];
+				if (tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
+					tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one) {
+					continue;
+				}
+				tag = vertex_tags[j];
+				if (tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
+					tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one) {
+					continue;
+				}
+
+				// Check within epsilon
+				if (
+					ygl::length(pos[i] - pos[j]) < eps &&
+					(color.size() == 0 || ygl::length(color[i] - color[j]) < eps)
+					) {
+					// Assuming a triangle mesh
+					if (triangles.size() > 0) {
+						for (auto& t : triangles) {
+							if (t.x == j) t.x = i;
+							if (t.y == j) t.y = i;
+							if (t.z == j) t.z = i;
+						}
+					}
+				}
+			}
+		}
+		if (triangles.size() > 0) {
+			ygl::compute_normals(triangles, pos, norm);
+		}
+		else if (quads.size() > 0) {
+			ygl::compute_normals(quads, pos, norm);
+		}
+	}
 };
 
 tagged_shape building_shp;
@@ -606,7 +645,7 @@ int main(int argc, char* argv[]) {
 
 	if (DO_MERGE_SAME_POINTS) {
 		ygl::log_info("merging overlapping points");
-		yb::merge_same_points(&building_shp);
+		building_shp.merge_same_points();
 	}
 
 	// Floor
