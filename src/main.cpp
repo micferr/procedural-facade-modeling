@@ -76,20 +76,17 @@ struct tagged_shape : public ygl::shape {
 		return new_ids;
 	}
 
+	bool is_edge_vertex(int i, float max_zero = 0.0001f, float min_one = 0.9999f) {
+		auto tag = vertex_tags[i];
+		return tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
+			tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one;
+	}
+
 	void merge_same_points(float eps = 0.0001f, float max_zero = 0.0001f, float min_one = 0.9999f) {
 		for (int i = 0; i < pos.size(); i++) {
 			for (int j = i + 1; j < pos.size(); j++) {
 				// If a vertex is part of a face border, don't merge it or onto it
-				auto tag = vertex_tags[i];
-				if (tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
-					tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one) {
-					continue;
-				}
-				tag = vertex_tags[j];
-				if (tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
-					tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one) {
-					continue;
-				}
+				if (is_edge_vertex(i) || is_edge_vertex(j)) continue;
 
 				// Check within epsilon
 				if (
@@ -128,6 +125,12 @@ void inflate_by_facecoord_heatmap(float bump_factor) {
 		)*2.f;
 		building_shp.pos[i] += building_shp.norm[i] * intensity * bump_factor;
 	}
+}
+
+void reset_colors() {
+	for (auto& kv : is_face_highlighted) kv.second = false;
+	show_facecoord_heatmap = false;
+	for (auto& c : building_shp.color) c = ygl::vec4f{ 1,1,1,1 };
 }
 
 // Application state
@@ -306,7 +309,7 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					}
 				}
 				else {
-					for (auto& c : building_shp.color) c = { 1.f,1.f,1.f,1.f };
+					reset_colors();
 				}
 				for (auto& is : is_face_highlighted) is.second = false;
 				ygl::update_gldata(app->scn);
@@ -317,6 +320,15 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			}
 			if (ygl::draw_glwidgets_button(win, "deflate faces by face coord heatmap")) {
 				inflate_by_facecoord_heatmap(-1.f);
+				ygl::update_gldata(app->scn);
+			}
+			if (ygl::draw_glwidgets_button(win, "highlight borders")) {
+				reset_colors();
+				for (auto i = 0; i < building_shp.pos.size(); i++) {
+					if (building_shp.is_edge_vertex(i)) {
+						building_shp.color[i] = { 1,0,0,1 };
+					}
+				}
 				ygl::update_gldata(app->scn);
 			}
 		}
@@ -529,9 +541,10 @@ int main(int argc, char* argv[]) {
 
 	// Number of segments to split each bezier in when rendering
 	const int SEGMENTS_PER_BEZIER = 40;
-	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER); // Utility
+	// Utility
+	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER); 
 
-																	// Building's height when DO_VERTICAL_BEZIER == false
+	// Building's height when DO_VERTICAL_BEZIER == false
 	const float BUILDING_HEIGHT = 20.f;
 
 	// Whether the floors' extrusion follows a bezier path
