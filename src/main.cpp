@@ -116,6 +116,7 @@ struct tagged_shape : public ygl::shape {
 tagged_shape building_shp;
 std::map<int, bool> is_face_highlighted;
 bool show_facecoord_heatmap = false;
+bool show_pattern_2 = false;
 
 void inflate_by_facecoord_heatmap(float bump_factor) {
 	for (auto i = 0; i < building_shp.pos.size(); i++) {
@@ -130,6 +131,7 @@ void inflate_by_facecoord_heatmap(float bump_factor) {
 void reset_colors() {
 	for (auto& kv : is_face_highlighted) kv.second = false;
 	show_facecoord_heatmap = false;
+	show_pattern_2 = false;
 	for (auto& c : building_shp.color) c = ygl::vec4f{ 1,1,1,1 };
 }
 
@@ -268,7 +270,7 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				app->selection, app->update_list, app->inspector_highlights);
 			ygl::end_glwidgets_tree(win);
 		}
-		if (ygl::begin_glwidgets_tree(win, "faces highlighting")) {
+		if (ygl::begin_glwidgets_tree(win, "face highlighting")) {
 			// init as not highlighted
 			if (is_face_highlighted.size() == 0) {
 				for (auto i : building_shp.face_ids()) {
@@ -298,6 +300,9 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
 			if (ygl::draw_glwidgets_checkbox(win, "show face coord heatmap", show_facecoord_heatmap)) {
+				auto newval = show_facecoord_heatmap;
+				reset_colors();
+				show_facecoord_heatmap = newval;
 				if (show_facecoord_heatmap) {
 					for (int i = 0; i < building_shp.pos.size(); i++) {
 						auto intensity =
@@ -308,10 +313,19 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						building_shp.color[i] = { intensity, intensity, intensity, 1.f };
 					}
 				}
-				else {
-					reset_colors();
+				ygl::update_gldata(app->scn);
+			}
+			if (ygl::draw_glwidgets_checkbox(win, "pattern 2", show_pattern_2)) {
+				auto newval = show_pattern_2;
+				reset_colors();
+				show_pattern_2 = newval;
+				if (show_pattern_2) {
+					for (int i = 0; i < building_shp.pos.size(); i++) {
+						const auto& tag = building_shp.vertex_tags[i];
+						auto intensity = tag.face_coord.x * tag.face_coord.y;
+						building_shp.color[i] = { 0,0,intensity,1.f };
+					}
 				}
-				for (auto& is : is_face_highlighted) is.second = false;
 				ygl::update_gldata(app->scn);
 			}
 			if (ygl::draw_glwidgets_button(win, "inflate faces by face coord heatmap")) {
@@ -655,10 +669,10 @@ int main(int argc, char* argv[]) {
 	ygl::log_info("converting to triangle mesh");
 	yb::to_triangle_mesh(&building_shp);
 
-	if (DO_MERGE_SAME_POINTS) {
+	/*if (DO_MERGE_SAME_POINTS) {
 		ygl::log_info("merging overlapping points");
 		building_shp.merge_same_points();
-	}
+	}*/
 
 	// Floor
 	ygl::log_info("floor and roof");
@@ -702,6 +716,11 @@ int main(int argc, char* argv[]) {
 	building_shp.color.resize(building_shp.pos.size(), { 1.f,1.f,1.f,1.f });
 	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 1.f,0.3f,0.3f });
 	ygl::instance* building_inst = ygl::make_instance("building_inst", &building_shp, building_mat);
+
+	if (DO_MERGE_SAME_POINTS) {
+		ygl::log_info("merging overlapping points");
+		building_shp.merge_same_points();
+	}
 
 	// Windows
 	ygl::shape cube_shp;
