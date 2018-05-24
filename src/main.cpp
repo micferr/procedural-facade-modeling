@@ -41,7 +41,7 @@ using namespace std::literals;
 struct tagged_shape : public ygl::shape {
 	struct tag {
 		int face_id; // Which face the vertex belongs to
-		ygl::vec2f face_coord; // Usually a [0;1]x[0,1] coordinate relative to the face
+		ygl::vec2f face_coord; // Usually a [0;1]x[0;1] coordinate relative to the face
 	};
 
 	std::vector<tag> vertex_tags;
@@ -117,6 +117,7 @@ tagged_shape building_shp;
 std::map<int, bool> is_face_highlighted;
 bool show_facecoord_heatmap = false;
 bool show_pattern_2 = false;
+bool show_border_highlighting = false;
 
 void inflate_by_facecoord_heatmap(float bump_factor) {
 	for (auto i = 0; i < building_shp.pos.size(); i++) {
@@ -299,6 +300,19 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			ygl::end_glwidgets_tree(win);
 		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
+			if (ygl::draw_glwidgets_checkbox(win, "highlight borders", show_border_highlighting)) {
+				auto newval = show_border_highlighting;
+				reset_colors();
+				show_border_highlighting = newval;
+				if (show_border_highlighting) {
+					for (auto i = 0; i < building_shp.pos.size(); i++) {
+						if (building_shp.is_edge_vertex(i)) {
+							building_shp.color[i] = { 1,0,0,1 };
+						}
+					}
+				}
+				ygl::update_gldata(app->scn);
+			}
 			if (ygl::draw_glwidgets_checkbox(win, "show face coord heatmap", show_facecoord_heatmap)) {
 				auto newval = show_facecoord_heatmap;
 				reset_colors();
@@ -322,8 +336,8 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				if (show_pattern_2) {
 					for (int i = 0; i < building_shp.pos.size(); i++) {
 						const auto& tag = building_shp.vertex_tags[i];
-						auto intensity = tag.face_coord.x * tag.face_coord.y;
-						building_shp.color[i] = { 0,0,intensity,1.f };
+						auto intensity = std::max(tag.face_coord.x,tag.face_coord.y);
+						building_shp.color[i] = { intensity/2.f,intensity/2.f,intensity,1.f };
 					}
 				}
 				ygl::update_gldata(app->scn);
@@ -334,15 +348,6 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			}
 			if (ygl::draw_glwidgets_button(win, "deflate faces by face coord heatmap")) {
 				inflate_by_facecoord_heatmap(-1.f);
-				ygl::update_gldata(app->scn);
-			}
-			if (ygl::draw_glwidgets_button(win, "highlight borders")) {
-				reset_colors();
-				for (auto i = 0; i < building_shp.pos.size(); i++) {
-					if (building_shp.is_edge_vertex(i)) {
-						building_shp.color[i] = { 1,0,0,1 };
-					}
-				}
 				ygl::update_gldata(app->scn);
 			}
 		}
