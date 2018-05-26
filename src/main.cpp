@@ -36,6 +36,7 @@
 #include "apps/yapp_ui.h"
 using namespace std::literals;
 
+#include "geom_bool.h"
 #include "geom_utils.h"
 
 struct tagged_shape : public ygl::shape {

@@ -101,6 +101,14 @@ add_library(clipper
 	src/clipper/clipper.cpp
 )
 
+find_package(CGAL REQUIRED)  
+if(CGAL_FOUND)
+    include( ${CGAL_USE_FILE} )
+	message(STATUS "CGAL found at ${CGAL_USE_FILE}")
+else(CGAL_FOUND)
+    message(STATUS "CGAL not found.")
+endif(CGAL_FOUND)
+
 add_executable(ytestgen src/apps/ytestgen.cpp)
 add_executable(ytrace src/apps/ytrace.cpp)
 add_executable(yscnproc src/apps/yscnproc.cpp)
