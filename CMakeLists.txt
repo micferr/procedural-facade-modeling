@@ -113,7 +113,11 @@ add_executable(ytestgen src/apps/ytestgen.cpp)
 add_executable(ytrace src/apps/ytrace.cpp)
 add_executable(yscnproc src/apps/yscnproc.cpp)
 add_executable(yimproc src/apps/yimproc.cpp)
-add_executable(main src/main.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
+add_executable(main 
+	src/main.cpp 
+	src/apps/yapp_ui.h src/apps/yapp_ui.cpp 
+	src/geom_bool.h src/geom_bool.cpp
+)
 
 target_link_libraries(ytestgen yocto_gl)
 target_link_libraries(ytrace yocto_gl)
