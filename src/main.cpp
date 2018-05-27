@@ -26,6 +26,8 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 
+/// Includes
+
 #include <cstdio>
 #include <iostream>
 #include <string>
@@ -38,6 +40,31 @@ using namespace std::literals;
 
 #include "geom_bool.h"
 #include "geom_utils.h"
+
+/// App constants
+
+// Number of segments to split each bezier in when rendering
+const int SEGMENTS_PER_BEZIER = 40;
+// Utility
+const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER);
+
+// Building's height when DO_VERTICAL_BEZIER == false
+const float BUILDING_HEIGHT = 20.f;
+
+// Whether the floors' extrusion follows a bezier path
+const bool DO_VERTICAL_BEZIER = false;
+
+// Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
+// to the bezier's derivative
+const bool INCLINED_FLOORS = false;
+
+// Whether the building rotates around itself
+const bool DO_VERTICAL_ROTATION = true;
+
+// Whether to merge overlapping vertices
+const bool DO_MERGE_SAME_POINTS = true;
+
+/// Struct, classes and functions
 
 struct tagged_shape : public ygl::shape {
 	struct tag {
@@ -114,7 +141,150 @@ struct tagged_shape : public ygl::shape {
 	}
 };
 
+
+template<class point>
+struct bezier {
+	std::vector<point> control_points;
+
+	bezier() = default;
+	bezier(const std::vector<point>& points) : control_points(points) {}
+
+	point compute(float t) const {
+		auto n = control_points.size();
+		if (n == 0) return { 0,0 };
+
+		// De Casteljau
+		auto points = control_points;
+		std::vector<point> points2;
+		while (points.size() > 1) {
+			for (int i = 0; i < points.size() - 1; i++) {
+				points2.push_back({ points[i] + (points[i + 1] - points[i])*t });
+			}
+			points = points2;
+			points2.clear();
+		}
+		return points[0];
+	}
+};
+
+template<class point>
+bezier<point> bezier_derivative(const bezier<point>& bez) {
+	bezier<point> b;
+
+	auto n = bez.control_points.size();
+	for (auto i = 0; i < n - 1; i++) {
+		const auto& curr = bez.control_points[i];
+		const auto& next = bez.control_points[i + 1];
+		const auto& cp = next - curr;
+		b.control_points.push_back(n*cp);
+	}
+
+	return b;
+}
+
+template<class point>
+class bezier_sides {
+	std::vector<bezier<point>> sides;
+
+public:
+	bezier_sides(const std::vector<point>& points, const std::vector<size_t> corner_ids) {
+		// Check: corners' IDs have to be strictly increasing
+		for (int i = 0; i < corner_ids.size() - 1; i++) {
+			if (corner_ids[i] >= corner_ids[i + 1]) throw std::runtime_error("Invalid corner ids");
+		}
+
+		// Check: corners' IDs in valid range
+		if (corner_ids.front() < 0 || corner_ids.back() >= points.size())
+			throw std::runtime_error("Invalid corner ids");
+
+		for (int i = 0; i < corner_ids.size() - 1;i++) {
+			bezier<point> b;
+			for (int j = corner_ids[i]; j <= corner_ids[i + 1]; j++) {
+				b.control_points.push_back(points[j]);
+			}
+			sides.push_back(b);
+		}
+		bezier<point> b;
+		for (int i = corner_ids.back(); i < points.size(); i++)
+			b.control_points.push_back(points[i]);
+		for (int i = 0; i <= corner_ids.front(); i++)
+			b.control_points.push_back(points[i]);
+		sides.push_back(b);
+	}
+
+	int num_sides() {
+		return sides.size();
+	}
+
+	point compute(size_t side, float t) {
+		return sides[side].compute(t);
+	}
+};
+
+/// Building data
+
 tagged_shape building_shp;
+
+bezier<ygl::vec3f> vertical_path({
+	{ 0,0,0 },
+	{ 20,10,0 },
+	{ 20,20,20 },
+	{ 10,35,-10 }
+});
+auto vert_derivative = bezier_derivative(vertical_path);
+
+bezier_sides<ygl::vec2f> bs(
+{
+	{ -4,-4 },{ -2,0 },{ 0,-8 },{ 2,-4 },
+	{ 1,-1 },{ 2,2 },
+	{ -1,6 },{ -4,2 }
+},
+{
+	0,3,5,7
+}
+);
+
+// Rotation of x and z coordinates, in radiants, around y-axis
+auto rotation_path = [](float t) {return 3.f*t;};
+
+auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
+	auto xz = bs.compute(side, x_t);
+	if (DO_VERTICAL_ROTATION) {
+		auto dist = ygl::length(xz);
+		auto angle = yb::get_angle(xz);
+		angle += rotation_path(y_t);
+		xz.x = dist*cosf(angle);
+		xz.y = dist*sinf(angle);
+	}
+	auto pos = yb::to_3d(xz);
+	if (DO_VERTICAL_BEZIER) {
+		if (INCLINED_FLOORS) {
+			// Taken with appreciation ( <3 ) from:
+			// https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
+			auto y_axis = ygl::vec3f{ 0,1,0 };
+			auto incl = ygl::normalize(vert_derivative.compute(y_t));
+
+			auto v = ygl::cross(y_axis, incl);
+			auto s = ygl::length(v);
+			auto c = ygl::dot(y_axis, incl);
+
+			if (c != 0.f) {
+				auto vx = ygl::mat3f{ { 0,v.z,-v.y },{ -v.z,0,v.x },{ v.y,-v.x,0 } };
+				auto R = ygl::identity_mat3f + vx + ((vx*vx)*(1 / (1 + c)));
+				pos = R*pos;
+			}
+		}
+		auto offset = vertical_path.compute(y_t);
+		pos += offset;
+	}
+	else {
+		pos.y = BUILDING_HEIGHT*y_t;
+	}
+
+	return pos;
+};
+
+// Interactive viewer options
 std::map<int, bool> is_face_highlighted;
 bool show_facecoord_heatmap = false;
 bool show_pattern_2 = false;
@@ -433,118 +603,6 @@ void run_ui(app_state* app) {
 	delete win;
 }
 
-// Load INI file. The implementation does not handle escaping.
-std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
-load_ini(const std::string& filename) {
-	auto f = fopen(filename.c_str(), "rt");
-	if (!f) throw std::runtime_error("cannot open " + filename);
-	auto ret = std::unordered_map<std::string,
-		std::unordered_map<std::string, std::string>>();
-	auto cur_group = ""s;
-	ret[""] = {};
-
-	char buf[4096];
-	while (fgets(buf, 4096, f)) {
-		auto line = std::string(buf);
-		if (line.empty()) continue;
-		if (line.front() == ';') continue;
-		if (line.front() == '#') continue;
-		if (line.front() == '[') {
-			if (line.back() != ']') throw std::runtime_error("bad INI format");
-			cur_group = line.substr(1, line.length() - 2);
-			ret[cur_group] = {};
-		}
-		else if (line.find('=') != line.npos) {
-			auto var = line.substr(0, line.find('='));
-			auto val = line.substr(line.find('=') + 1);
-			ret[cur_group][var] = val;
-		}
-		else {
-			throw std::runtime_error("bad INI format");
-		}
-	}
-
-	fclose(f);
-
-	return ret;
-}
-
-template<class point>
-struct bezier {
-	std::vector<point> control_points;
-
-	point compute(float t) const {
-		auto n = control_points.size();
-		if (n == 0) return { 0,0 };
-
-		// De Casteljau
-		auto points = control_points;
-		std::vector<point> points2;
-		while (points.size() > 1) {
-			for (int i = 0; i < points.size() - 1; i++) {
-				points2.push_back({ points[i] + (points[i + 1] - points[i])*t });
-			}
-			points = points2;
-			points2.clear();
-		}
-		return points[0];
-	}
-};
-
-template<class point>
-bezier<point> bezier_derivative(const bezier<point>& bez) {
-	bezier<point> b;
-
-	auto n = bez.control_points.size();
-	for (auto i = 0; i < n - 1; i++) {
-		const auto& curr = bez.control_points[i];
-		const auto& next = bez.control_points[i + 1];
-		const auto& cp = next - curr;
-		b.control_points.push_back(n*cp);
-	}
-
-	return b;
-}
-
-template<class point>
-class bezier_sides {
-	std::vector<bezier<point>> sides;
-
-public:
-	bezier_sides(const std::vector<point>& points, const std::vector<size_t> corner_ids) {
-		// Check: corners' IDs have to be strictly increasing
-		for (int i = 0; i < corner_ids.size() - 1; i++) {
-			if (corner_ids[i] >= corner_ids[i + 1]) throw std::runtime_error("Invalid corner ids");
-		}
-
-		// Check: corners' IDs in valid range
-		if (corner_ids.front() < 0 || corner_ids.back() >= points.size())
-			throw std::runtime_error("Invalid corner ids");
-
-		for (int i = 0; i < corner_ids.size() - 1;i++) {
-			bezier<point> b;
-			for (int j = corner_ids[i]; j <= corner_ids[i + 1]; j++) {
-				b.control_points.push_back(points[j]);
-			}
-			sides.push_back(b);
-		}
-		bezier<point> b;
-		for (int i = corner_ids.back(); i < points.size(); i++)
-			b.control_points.push_back(points[i]);
-		for (int i = 0; i <= corner_ids.front(); i++)
-			b.control_points.push_back(points[i]);
-		sides.push_back(b);
-	}
-
-	int num_sides() {
-		return sides.size();
-	}
-
-	point compute(size_t side, float t) {
-		return sides[side].compute(t);
-	}
-};
-
 int main(int argc, char* argv[]) {
 	// create empty scene
 	auto app = new app_state();
@@ -572,89 +630,7 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
-	// Number of segments to split each bezier in when rendering
-	const int SEGMENTS_PER_BEZIER = 40;
-	// Utility
-	const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER); 
-
-	// Building's height when DO_VERTICAL_BEZIER == false
-	const float BUILDING_HEIGHT = 20.f;
-
-	// Whether the floors' extrusion follows a bezier path
-	const bool DO_VERTICAL_BEZIER = false;
-
-	// Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
-	// to the bezier's derivative
-	const bool INCLINED_FLOORS = false;
-
-	// Whether the building rotates around itself
-	const bool DO_VERTICAL_ROTATION = true;
-
-	// Whether to merge overlapping vertices
-	const bool DO_MERGE_SAME_POINTS = true;
-
-	ygl::log_info("creating beziers");
-	bezier_sides<ygl::vec2f> bs(
-	{
-		{ -4,-4 },{ -2,0 },{ 0,-8 },{ 2,-4 },
-		{ 1,-1 },{ 2,2 },
-		{ -1,6 },{ -4,2 }
-	},
-	{
-		0,3,5,7
-	}
-	);
-
-	bezier<ygl::vec3f> vertical_path;
-	vertical_path.control_points = {
-		{ 0,0,0 },
-		{ 20,10,0 },
-		{ 20,20,20 },
-		{ 10,35,-10 }
-	};
-	auto vert_derivative = bezier_derivative(vertical_path);
-
-	// Rotation of x and z coordinates, in radiants, around y-axis
-	auto rotation_path = [](float t) {return 3.f*t;};
-
-	auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
-		auto xz = bs.compute(side, x_t);
-		if (DO_VERTICAL_ROTATION) {
-			auto dist = ygl::length(xz);
-			auto angle = yb::get_angle(xz);
-			angle += rotation_path(y_t);
-			xz.x = dist*cosf(angle);
-			xz.y = dist*sinf(angle);
-		}
-		auto pos = yb::to_3d(xz);
-		if (DO_VERTICAL_BEZIER) {
-			if (INCLINED_FLOORS) {
-				// Taken with appreciation ( <3 ) from:
-				// https://math.stackexchange.com/questions/180418/calculate-rotation-matrix-to-align-vector-a-to-vector-b-in-3d
-				auto y_axis = ygl::vec3f{ 0,1,0 };
-				auto incl = ygl::normalize(vert_derivative.compute(y_t));
-
-				auto v = ygl::cross(y_axis, incl);
-				auto s = ygl::length(v);
-				auto c = ygl::dot(y_axis, incl);
-
-				if (c != 0.f) {
-					auto vx = ygl::mat3f{ { 0,v.z,-v.y },{ -v.z,0,v.x },{ v.y,-v.x,0 } };
-					auto R = ygl::identity_mat3f + vx + ((vx*vx)*(1 / (1 + c)));
-					pos = R*pos;
-				}
-			}
-			auto offset = vertical_path.compute(y_t);
-			pos += offset;
-		}
-		else {
-			pos.y = BUILDING_HEIGHT*y_t;
-		}
-
-		return pos;
-	};
-
-	// Building 
+	// Building creation 
 	ygl::log_info("creating building mesh");
 	building_shp.name = "building_shp";
 
@@ -789,16 +765,6 @@ int main(int argc, char* argv[]) {
 
 	// setup logger
 	if (app->quiet) ygl::log_verbose() = false;
-
-	// fix hilights
-	if (!highlight_filename.empty()) {
-		try {
-			app->inspector_highlights = load_ini(highlight_filename).at("");
-		}
-		catch (std::exception e) {
-			ygl::log_fatal("cannot load highlihgt file {}", highlight_filename);
-		}
-	}
 
 	// scene loading
 	app->scn = &scene;
