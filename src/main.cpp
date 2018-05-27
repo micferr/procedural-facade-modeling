@@ -351,6 +351,18 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				inflate_by_facecoord_heatmap(-1.f);
 				ygl::update_gldata(app->scn);
 			}
+			if (ygl::draw_glwidgets_button(win, "inflate along normals")) {
+				for (int i = 0; i < building_shp.pos.size(); i++) {
+					building_shp.pos[i] += building_shp.norm[i];
+				}
+				ygl::update_gldata(app->scn);
+			}
+			if (ygl::draw_glwidgets_button(win, "deflate along normals")) {
+				for (int i = 0; i < building_shp.pos.size(); i++) {
+					building_shp.pos[i] -= building_shp.norm[i];
+				}
+				ygl::update_gldata(app->scn);
+			}
 		}
 	}
 	ygl::end_glwidgets_frame(win);
@@ -536,6 +548,7 @@ public:
 int main(int argc, char* argv[]) {
 	// create empty scene
 	auto app = new app_state();
+	app->navigation_fps = true;
 
 	// parse command line
 	auto parser =
@@ -568,11 +581,11 @@ int main(int argc, char* argv[]) {
 	const float BUILDING_HEIGHT = 20.f;
 
 	// Whether the floors' extrusion follows a bezier path
-	const bool DO_VERTICAL_BEZIER = true;
+	const bool DO_VERTICAL_BEZIER = false;
 
 	// Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
 	// to the bezier's derivative
-	const bool INCLINED_FLOORS = true;
+	const bool INCLINED_FLOORS = false;
 
 	// Whether the building rotates around itself
 	const bool DO_VERTICAL_ROTATION = true;
@@ -675,11 +688,6 @@ int main(int argc, char* argv[]) {
 	ygl::log_info("converting to triangle mesh");
 	yb::to_triangle_mesh(&building_shp);
 
-	/*if (DO_MERGE_SAME_POINTS) {
-		ygl::log_info("merging overlapping points");
-		building_shp.merge_same_points();
-	}*/
-
 	// Floor
 	ygl::log_info("floor and roof");
 	std::vector<ygl::vec3f> floor_border;
@@ -715,11 +723,7 @@ int main(int argc, char* argv[]) {
 	for (const auto& t : floor_triangles)
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
-	ygl::log_info("recomputing normals");
-	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
-
 	// Final settings
-	building_shp.color.resize(building_shp.pos.size(), { 1.f,1.f,1.f,1.f });
 	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 1.f,0.3f,0.3f });
 	ygl::instance* building_inst = ygl::make_instance("building_inst", &building_shp, building_mat);
 
@@ -728,6 +732,30 @@ int main(int argc, char* argv[]) {
 		building_shp.merge_same_points();
 	}
 
+	ygl::log_info("computing normals"); 
+	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
+
+	// Boolean example
+	ygl::shape big_cube;
+	big_cube.name = "big_cube";
+	ygl::make_cube(big_cube.quads, big_cube.pos, 0, 10.0);
+	for (auto& p : big_cube.pos) p.y *= 0.5f;
+	yb::to_triangle_mesh(&big_cube);
+	ygl::shape big_cube_2;
+	ygl::make_cube(big_cube_2.quads, big_cube_2.pos, 0, 15.0);
+	for (auto& p : big_cube_2.pos) p.x += 6.f;
+	yb::to_triangle_mesh(&big_cube_2);
+	auto pt = yb::mesh_boolean_operation(
+		building_shp.pos, building_shp.triangles,
+		big_cube_2.pos, big_cube_2.triangles,
+		yb::bool_operation::DIFFERENCE
+	);
+	building_shp.pos = std::get<0>(pt);
+	building_shp.triangles = std::get<1>(pt);
+	yb::convert_to_faceted(&building_shp);
+
+	building_shp.color.resize(building_shp.pos.size(), { 1.f,1.f,1.f,1.f });
+	
 	// Windows
 	ygl::shape cube_shp;
 	cube_shp.name = "cube_shp";
