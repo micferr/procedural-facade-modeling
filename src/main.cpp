@@ -64,6 +64,10 @@ const bool DO_VERTICAL_ROTATION = true;
 // Whether to merge overlapping vertices
 const bool DO_MERGE_SAME_POINTS = true;
 
+// Number of windows per side and number of floors
+const int NUM_WINDOWS_PER_SIDE = 5;
+const int NUM_FLOORS = 6;
+
 /// Struct, classes and functions
 
 struct tagged_shape : public ygl::shape {
@@ -470,6 +474,39 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			}
 			ygl::end_glwidgets_tree(win);
 		}
+		if (ygl::begin_glwidgets_tree(win, "windows")) {
+			static bool windows_computed = false;
+			if (ygl::draw_glwidgets_button(win, "compute windows") && !windows_computed) {
+				windows_computed = true;
+				ygl::log_info("carving windows...");
+
+				for (int j = 0; j < NUM_FLOORS; j++) {
+					for (int i = 0; i < NUM_WINDOWS_PER_SIDE; i++) {
+						for (int s = 0; s < bs.num_sides(); s++) {
+							auto dx = 1 / float(NUM_WINDOWS_PER_SIDE);
+							auto dy = 1 / float(NUM_FLOORS);
+							auto p = compute_position(s, i*dx + dx/2.f, j*dy + dy/2.f);
+							ygl::shape c;
+							ygl::make_cube(c.quads, c.pos, 0, 0.3f);
+							yb::to_triangle_mesh(&c);
+							for (auto& pos : c.pos) pos += p;
+							auto pt = yb::mesh_boolean_operation(
+								building_shp.pos, building_shp.triangles,
+								c.pos, c.triangles,
+								yb::bool_operation::DIFFERENCE
+							);
+							std::tie(building_shp.pos, building_shp.triangles) = pt;
+						}
+					}
+					ygl::log_info("    Floors carved: {}/{}", j + 1, NUM_FLOORS);
+				}
+				yb::convert_to_faceted(&building_shp);
+				//ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
+				building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });
+				ygl::update_gldata(app->scn);
+			}
+			ygl::end_glwidgets_tree(win);
+		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
 			if (ygl::draw_glwidgets_checkbox(win, "highlight borders", show_border_highlighting)) {
 				auto newval = show_border_highlighting;
@@ -707,60 +744,13 @@ int main(int argc, char* argv[]) {
 		ygl::log_info("merging overlapping points");
 		building_shp.merge_same_points();
 	}
+	building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });
 
 	ygl::log_info("computing normals"); 
 	ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
 
-	// Boolean example
-	ygl::shape big_cube;
-	big_cube.name = "big_cube";
-	ygl::make_cube(big_cube.quads, big_cube.pos, 0, 10.0);
-	for (auto& p : big_cube.pos) p.y *= 0.5f;
-	yb::to_triangle_mesh(&big_cube);
-	ygl::shape big_cube_2;
-	ygl::make_cube(big_cube_2.quads, big_cube_2.pos, 0, 15.0);
-	for (auto& p : big_cube_2.pos) p.x += 6.f;
-	yb::to_triangle_mesh(&big_cube_2);
-	auto pt = yb::mesh_boolean_operation(
-		building_shp.pos, building_shp.triangles,
-		big_cube_2.pos, big_cube_2.triangles,
-		yb::bool_operation::DIFFERENCE
-	);
-	building_shp.pos = std::get<0>(pt);
-	building_shp.triangles = std::get<1>(pt);
-	yb::convert_to_faceted(&building_shp);
-
-	building_shp.color.resize(building_shp.pos.size(), { 1.f,1.f,1.f,1.f });
-	
-	// Windows
-	ygl::shape cube_shp;
-	cube_shp.name = "cube_shp";
-	ygl::make_cube(cube_shp.quads, cube_shp.pos, 5, .1f);
-	ygl::material* cube_mat = ygl::make_material("cube_mat");
-	std::vector<ygl::instance*> cube_insts;
-	ygl::log_info("placing cubes");
-	for (int y = 0; y < 10; y++) {
-		auto y_t = float(y) / 10.f + 0.05f;
-
-		for (int i = 0; i < 20; i++) {
-			auto x_t = float(i) / 20.f;
-
-			for (int side = 0; side < bs.num_sides(); side++) {
-				ygl::frame3f cube_frame;
-				cube_frame.o = compute_position(side, x_t, y_t);
-				cube_insts.push_back(ygl::make_instance(
-					"cube_inst" + std::to_string(side) + "_" + std::to_string(i),
-					&cube_shp,
-					cube_mat,
-					cube_frame
-				));
-			}
-		}
-	}
-
 	ygl::scene scene;
 	ygl::log_info("generating scene");
-	for (auto inst : cube_insts) yb::add_to_scene(&scene, inst);
 	yb::add_to_scene(&scene, building_inst);
 
 	// setup logger
