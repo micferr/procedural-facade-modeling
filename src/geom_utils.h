@@ -677,6 +677,21 @@ namespace yb {
 		ygl::compute_normals(shp->triangles, shp->pos, shp->norm);
 		shp->quads.clear();
 	}
+
+	// Triangle mesh only
+	void convert_to_faceted(ygl::shape* shp) {
+		std::vector<ygl::vec3f> pos;
+		std::vector<ygl::vec3i> triangles;
+		for (auto i = 0; i < shp->triangles.size(); i++) {
+			pos.push_back(shp->pos[shp->triangles[i].x]);
+			pos.push_back(shp->pos[shp->triangles[i].y]);
+			pos.push_back(shp->pos[shp->triangles[i].z]);
+			triangles.push_back({ i * 3, i * 3 + 1, i * 3 + 2 });
+		}
+		shp->pos = pos;
+		shp->triangles = triangles;
+		ygl::compute_normals(shp->triangles, shp->pos, shp->norm);
+	}
 }
 
 #endif // GEOM_UTILS_H
