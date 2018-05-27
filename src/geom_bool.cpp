@@ -39,7 +39,23 @@ mesh_boolean_operation(
 	Eigen::MatrixXd e_pr;
 	Eigen::MatrixXi e_tr;
 	Eigen::VectorXi J;
-	igl::copyleft::cgal::mesh_boolean(e_pa, e_ta, e_pb, e_tb, igl::MESH_BOOLEAN_TYPE_MINUS, e_pr, e_tr, J);
+	igl::MeshBooleanType bool_op;
+	switch (op) {
+	case bool_operation::INTERSECTION:
+		bool_op = igl::MESH_BOOLEAN_TYPE_INTERSECT;
+		break;
+	case bool_operation::DIFFERENCE:
+		bool_op = igl::MESH_BOOLEAN_TYPE_MINUS;
+		break;
+	case bool_operation::UNION:
+		bool_op = igl::MESH_BOOLEAN_TYPE_UNION;
+		break;
+	case bool_operation::XOR:
+		bool_op = igl::MESH_BOOLEAN_TYPE_XOR;
+		break;
+	default: break;
+	}
+	igl::copyleft::cgal::mesh_boolean(e_pa, e_ta, e_pb, e_tb, bool_op, e_pr, e_tr, J);
 	
 	std::vector<ygl::vec3f> pos_r;
 	std::vector<ygl::vec3i> triangles_r;
