@@ -422,9 +422,9 @@ namespace yb {
 	* Rotates the point by 'angle' radiants, counter-clockwise relative to (0,0)
 	*/
 	void rotate(ygl::vec2f& point, float angle) {
-		auto new_angle = atan2f(point.y, point.x) + angle;
+		auto new_angle = get_angle(point) + angle;
 		auto length = ygl::length(point);
-		point = { cos(new_angle), sin(new_angle) }*length;
+		point = { cos(new_angle)*length, sin(new_angle)*length };
 	}
 
 	void rotate(std::vector<ygl::vec2f>& points, float angle) {
