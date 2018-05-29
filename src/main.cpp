@@ -188,9 +188,9 @@ bezier<point> bezier_derivative(const bezier<point>& bez) {
 
 template<class point>
 class bezier_sides {
+public:
 	std::vector<bezier<point>> sides;
 
-public:
 	bezier_sides(const std::vector<point>& points, const std::vector<size_t> corner_ids) {
 		// Check: corners' IDs have to be strictly increasing
 		for (int i = 0; i < corner_ids.size() - 1; i++) {
@@ -476,6 +476,15 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 		}
 		if (ygl::begin_glwidgets_tree(win, "windows")) {
 			static bool windows_computed = false;
+			static yb::bool_operation win_op = yb::bool_operation::DIFFERENCE;
+
+			ygl::draw_glwidgets_combobox(
+				win, "win mode", win_op, 
+				{ 
+					{yb::bool_operation::DIFFERENCE, "difference"}, 
+					{yb::bool_operation::UNION, "union"} 
+				}
+			);
 			if (ygl::draw_glwidgets_button(win, "compute windows") && !windows_computed) {
 				windows_computed = true;
 				ygl::log_info("carving windows...");
@@ -487,27 +496,47 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							auto dy = 1 / float(NUM_FLOORS);
 							auto p = compute_position(s, i*dx + dx/2.f, j*dy + dy/2.f);
 							ygl::shape c;
-							ygl::make_cube(c.quads, c.pos, 0, 0.3f);
+							ygl::make_cube(c.quads, c.pos, 0, 0.5f);
 							yb::to_triangle_mesh(&c);
+
+							auto b_der = bezier_derivative(bs.sides[s]);
+							auto rot_xz = ygl::normalize(b_der.compute(i*dx + dx/2.f));
+							auto rot_angle = yb::get_angle(rot_xz)-yb::pi/2.f;
+							if (DO_VERTICAL_ROTATION) {
+								rot_angle += rotation_path(j*dy + dy/2.f);
+							}
+							yb::rotate_y(c.pos, rot_angle);
 							for (auto& pos : c.pos) pos += p;
+
 							auto pt = yb::mesh_boolean_operation(
 								building_shp.pos, building_shp.triangles,
-								c.pos, c.triangles,
-								yb::bool_operation::DIFFERENCE
+								c.pos, c.triangles, win_op
 							);
 							std::tie(building_shp.pos, building_shp.triangles) = pt;
+							ygl::log_info(
+								"    floor windows carved: {}/{}",
+								int(i*bs.num_sides() + s + 1),
+								int(NUM_WINDOWS_PER_SIDE*bs.num_sides())
+							);
 						}
 					}
 					ygl::log_info("    Floors carved: {}/{}", j + 1, NUM_FLOORS);
 				}
+				ygl::log_info("    converting to faceted");
 				yb::convert_to_faceted(&building_shp);
-				//ygl::compute_normals(building_shp.triangles, building_shp.pos, building_shp.norm);
 				building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });
 				ygl::update_gldata(app->scn);
+				ygl::log_info("    done");
 			}
 			ygl::end_glwidgets_tree(win);
 		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
+			if (ygl::draw_glwidgets_button(win, "merge overlapping vertices")) {
+				ygl::log_info("merging overlapping points...");
+				yb::merge_same_points(&building_shp);
+				ygl::update_gldata(app->scn);
+				ygl::log_info("    done");
+			}
 			if (ygl::draw_glwidgets_checkbox(win, "highlight borders", show_border_highlighting)) {
 				auto newval = show_border_highlighting;
 				reset_colors();
@@ -765,6 +794,10 @@ int main(int argc, char* argv[]) {
 	// fix scene
 	ygl::update_bbox(app->scn);
 	ygl::add_missing_camera(app->scn);
+	ygl::camera top_cam = *app->scn->cameras.front();
+	top_cam.name = "top camera";
+	top_cam.frame = ygl::lookat_frame({ 0,BUILDING_HEIGHT*2.f,0 }, { 0,0,0 }, { 0,0,-1 });
+	app->scn->cameras.push_back(&top_cam);
 	ygl::add_missing_names(app->scn);
 	ygl::add_missing_tangent_space(app->scn);
 	app->cam = app->scn->cameras[0];
