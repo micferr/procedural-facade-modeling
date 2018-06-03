@@ -117,6 +117,7 @@ add_executable(main
 	src/main.cpp 
 	src/apps/yapp_ui.h src/apps/yapp_ui.cpp 
 	src/geom_bool.h src/geom_bool.cpp
+	src/tagged_shape.h src/tagged_shape.cpp
 )
 
 target_link_libraries(ytestgen yocto_gl)

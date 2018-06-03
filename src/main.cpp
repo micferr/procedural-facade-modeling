@@ -40,6 +40,7 @@ using namespace std::literals;
 
 #include "geom_bool.h"
 #include "geom_utils.h"
+#include "tagged_shape.h"
 
 /// App constants
 
@@ -59,7 +60,7 @@ const bool DO_VERTICAL_BEZIER = false;
 const bool INCLINED_FLOORS = false;
 
 // Whether the building rotates around itself
-const bool DO_VERTICAL_ROTATION = true;
+const bool DO_VERTICAL_ROTATION = false;
 
 // Whether to merge overlapping vertices
 const bool DO_MERGE_SAME_POINTS = true;
@@ -69,82 +70,6 @@ const int NUM_WINDOWS_PER_SIDE = 5;
 const int NUM_FLOORS = 6;
 
 /// Struct, classes and functions
-
-struct tagged_shape : public ygl::shape {
-	struct tag {
-		int face_id; // Which face the vertex belongs to
-		ygl::vec2f face_coord; // Usually a [0;1]x[0;1] coordinate relative to the face
-	};
-
-	std::vector<tag> vertex_tags;
-
-	std::set<int> face_ids() {
-		std::set<int> ids;
-		for (const auto& t : vertex_tags)
-			ids.insert(t.face_id);
-		return ids;
-	}
-
-	int num_faces() {
-		return face_ids().size();
-	}
-
-	// Returns an unused id for a new face
-	int get_new_id() {
-		return get_new_ids(1)[0];
-	}
-
-	// Returns n unused ids for new faces
-	std::vector<int> get_new_ids(int n) {
-		auto ids = face_ids();
-		std::vector<int> new_ids;
-		auto count = 0;
-		for (auto i = 0; count < n; i++) {
-			if (ids.count(i) == 0) {
-				new_ids.push_back(i);
-				count++;
-			}
-		}
-		return new_ids;
-	}
-
-	bool is_edge_vertex(int i, float max_zero = 0.0001f, float min_one = 0.9999f) {
-		auto tag = vertex_tags[i];
-		return tag.face_coord.x <= max_zero || tag.face_coord.x >= min_one ||
-			tag.face_coord.y <= max_zero || tag.face_coord.y >= min_one;
-	}
-
-	void merge_same_points(float eps = 0.0001f, float max_zero = 0.0001f, float min_one = 0.9999f) {
-		for (int i = 0; i < pos.size(); i++) {
-			for (int j = i + 1; j < pos.size(); j++) {
-				// If a vertex is part of a face border, don't merge it or onto it
-				if (is_edge_vertex(i) || is_edge_vertex(j)) continue;
-
-				// Check within epsilon
-				if (
-					ygl::length(pos[i] - pos[j]) < eps &&
-					(color.size() == 0 || ygl::length(color[i] - color[j]) < eps)
-					) {
-					// Assuming a triangle mesh
-					if (triangles.size() > 0) {
-						for (auto& t : triangles) {
-							if (t.x == j) t.x = i;
-							if (t.y == j) t.y = i;
-							if (t.z == j) t.z = i;
-						}
-					}
-				}
-			}
-		}
-		if (triangles.size() > 0) {
-			ygl::compute_normals(triangles, pos, norm);
-		}
-		else if (quads.size() > 0) {
-			ygl::compute_normals(quads, pos, norm);
-		}
-	}
-};
-
 
 template<class point>
 struct bezier {
@@ -227,7 +152,7 @@ public:
 
 /// Building data
 
-tagged_shape building_shp;
+yb::tagged_shape building_shp;
 
 bezier<ygl::vec3f> vertical_path({
 	{ 0,0,0 },
@@ -479,10 +404,10 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			static yb::bool_operation win_op = yb::bool_operation::DIFFERENCE;
 
 			ygl::draw_glwidgets_combobox(
-				win, "win mode", win_op, 
-				{ 
-					{yb::bool_operation::DIFFERENCE, "difference"}, 
-					{yb::bool_operation::UNION, "union"} 
+				win, "win mode", win_op,
+				{
+					{yb::bool_operation::DIFFERENCE, "difference"},
+					{yb::bool_operation::UNION, "union"}
 				}
 			);
 			if (ygl::draw_glwidgets_button(win, "compute windows") && !windows_computed) {

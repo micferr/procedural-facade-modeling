@@ -1,11 +1,12 @@
 #include "geom_bool.h"
+#include "tagged_shape.h"
 
 #include <igl/copyleft/cgal/mesh_boolean.h>
 
 namespace yb {
 
-std::tuple<std::vector<ygl::vec3f>, std::vector<ygl::vec3i>>
-mesh_boolean_operation(
+std::tuple<std::vector<ygl::vec3f>, std::vector<ygl::vec3i>, Eigen::VectorXi>
+_mesh_boolean_operation(
 	const std::vector<ygl::vec3f>& pos_a,
 	const std::vector<ygl::vec3i>& triangles_a,
 	const std::vector<ygl::vec3f>& pos_b,
@@ -65,7 +66,19 @@ mesh_boolean_operation(
 	for (int i = 0; i < e_tr.rows(); i++) {
 		triangles_r.push_back({ e_tr(i,0), e_tr(i,1), e_tr(i,2) });
 	}
-	return { pos_r, triangles_r };
+	return { pos_r, triangles_r, J };
+}
+
+std::tuple<std::vector<ygl::vec3f>, std::vector<ygl::vec3i>>
+mesh_boolean_operation(
+	const std::vector<ygl::vec3f>& pos_a,
+	const std::vector<ygl::vec3i>& triangles_a,
+	const std::vector<ygl::vec3f>& pos_b,
+	const std::vector<ygl::vec3i>& triangles_b,
+	bool_operation op
+) {
+	auto res = _mesh_boolean_operation(pos_a, triangles_a, pos_b, triangles_b, op);
+	return { std::get<0>(res), std::get<1>(res) };
 }
 
 }
