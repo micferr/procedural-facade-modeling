@@ -42,32 +42,32 @@ using namespace std::literals;
 #include "geom_utils.h"
 #include "tagged_shape.h"
 
-/// App constants
+/// App settings
 
 // Number of segments to split each bezier in when rendering
-const int SEGMENTS_PER_BEZIER = 40;
+int SEGMENTS_PER_BEZIER;
 // Utility
-const float SEGMENTS_PER_BEZIER_F = float(SEGMENTS_PER_BEZIER);
+#define SEGMENTS_PER_BEZIER_F (float(SEGMENTS_PER_BEZIER))
 
 // Building's height when DO_VERTICAL_BEZIER == false
-const float BUILDING_HEIGHT = 20.f;
+float BUILDING_HEIGHT;
 
 // Whether the floors' extrusion follows a bezier path
-const bool DO_VERTICAL_BEZIER = false;
+bool DO_VERTICAL_BEZIER;
 
 // Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
 // to the bezier's derivative
-const bool INCLINED_FLOORS = false;
+bool INCLINED_FLOORS;
 
 // Whether the building rotates around itself
-const bool DO_VERTICAL_ROTATION = false;
+bool DO_VERTICAL_ROTATION;
 
 // Whether to merge overlapping vertices
-const bool DO_MERGE_SAME_POINTS = true;
+bool DO_MERGE_SAME_POINTS;
 
 // Number of windows per side and number of floors
-const int NUM_WINDOWS_PER_SIDE = 5;
-const int NUM_FLOORS = 6;
+int NUM_WINDOWS_PER_SIDE;
+int NUM_FLOORS;
 
 /// Struct, classes and functions
 
@@ -311,7 +311,7 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 		return;
 	}
 
-	if (ygl::begin_glwidgets_frame(win, "yview")) {
+	if (ygl::begin_glwidgets_frame(win, "yiview")) {
 		ygl::draw_glwidgets_text(win, "scene", app->filename);
 		if (ygl::draw_glwidgets_button(win, "new")) {
 			delete app->scn;
@@ -456,6 +456,12 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 			ygl::end_glwidgets_tree(win);
 		}
 		if (ygl::begin_glwidgets_tree(win, "other")) {
+			if (ygl::draw_glwidgets_button(win, "convert to faceted")) {
+				ygl::log_info("converting to faceted...");
+				yb::convert_to_faceted(&building_shp);
+				building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });
+				ygl::log_info("    done");
+			}
 			if (ygl::draw_glwidgets_button(win, "merge overlapping vertices")) {
 				ygl::log_info("merging overlapping points...");
 				yb::merge_same_points(&building_shp);
@@ -541,7 +547,7 @@ void run_ui(app_state* app) {
 	auto win =
 		ygl::make_glwindow((int)std::round(app->cam->aspect * app->resolution) +
 			ygl::default_glwidgets_width,
-			app->resolution, "yview | " + app->filename, app);
+			app->resolution, "yiview", app);
 	ygl::set_glwindow_callbacks(win, nullptr, nullptr, refresh);
 
 	// load textures and vbos
@@ -602,6 +608,32 @@ int main(int argc, char* argv[]) {
 	// parse command line
 	auto parser =
 		ygl::make_parser(argc, argv, "yiview", "views scenes interactively");
+
+	SEGMENTS_PER_BEZIER = ygl::parse_opt(
+		parser, "--bezier-segments", "-bs", "Number of segments for each bezier curve.", 40
+	);
+	BUILDING_HEIGHT = ygl::parse_opt(
+		parser, "--building-height", "-bh", "Height of the straight building.", 20.f
+	);
+	DO_VERTICAL_BEZIER = ygl::parse_flag(
+		parser, "--vertical-bezier", "-vb", "The building is extruded along a bezier curve."
+	);
+	INCLINED_FLOORS = ygl::parse_flag(
+		parser, "--inclined floors", "-if", "The floors are perpendicular to the extrusion path."
+	);
+	DO_VERTICAL_ROTATION = ygl::parse_flag(
+		parser, "--vertical-rotation", "-vr", "The building rotates around itself during extrusion."
+	);
+	DO_MERGE_SAME_POINTS = ygl::parse_flag(
+		parser, "--no-merge-points", "-nm", "Do not merge overlapping vertices after building generation.", true
+	);
+	NUM_WINDOWS_PER_SIDE = ygl::parse_opt(
+		parser, "--num-windows", "-nw", "Number of windows, per side, per floor.", 5
+	);
+	NUM_FLOORS = ygl::parse_opt(
+		parser, "--num-floors", "-nf", "Number of floors.", 6
+	);
+
 	app->eyelight = ygl::parse_flag(
 		parser, "--eyelight", "-c", "Eyelight rendering.", false);
 	auto double_sided = ygl::parse_flag(
@@ -616,6 +648,7 @@ int main(int argc, char* argv[]) {
 		ygl::parse_opt(parser, "--highlights", "", "Highlight filename", ""s);
 	app->imfilename = ygl::parse_opt(
 		parser, "--output-image", "-o", "Image filename", "out.png"s);
+
 	if (ygl::should_exit(parser)) {
 		printf("%s\n", get_usage(parser).c_str());
 		exit(1);
