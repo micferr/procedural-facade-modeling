@@ -78,6 +78,20 @@ struct bezier {
 	bezier() = default;
 	bezier(const std::vector<point>& points) : control_points(points) {}
 
+	// Approximation, the higher the number of segments, the better the result.
+	// Compute (n+1) points of the bezier (equidistant t's) and sum the distances
+	// between each consecutive pair of points
+	float length(int num_segments = SEGMENTS_PER_BEZIER) {
+		auto l = 0.f;
+		auto p = compute(0.f);
+		for (auto i = 1; i <= num_segments; i++) {
+			auto p2 = compute(float(i) / num_segments);
+			l += ygl::length(p2 - p);
+			p = p2;
+		}
+		return l;
+	}
+
 	point compute(float t) const {
 		auto n = control_points.size();
 		if (n == 0) return { 0,0 };
