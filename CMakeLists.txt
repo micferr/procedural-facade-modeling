@@ -101,13 +101,21 @@ add_library(clipper
 	src/clipper/clipper.cpp
 )
 
-find_package(CGAL REQUIRED)  
-if(CGAL_FOUND)
-    include( ${CGAL_USE_FILE} )
-	message(STATUS "CGAL found at ${CGAL_USE_FILE}")
-else(CGAL_FOUND)
-    message(STATUS "CGAL not found.")
-endif(CGAL_FOUND)
+add_library(rhea
+	src/rhea/abstract_variable.cpp
+	src/rhea/linear_expression.cpp
+	src/rhea/simplex_solver.cpp
+	src/rhea/symbolic_weight.cpp
+	src/rhea/tableau.cpp
+)
+
+ find_package(CGAL REQUIRED)  
+ if(CGAL_FOUND)
+     include( ${CGAL_USE_FILE} )
+     message(STATUS "CGAL found at ${CGAL_USE_FILE}")
+ else(CGAL_FOUND)
+     message(STATUS "CGAL not found.")
+ endif(CGAL_FOUND) 
 
 add_executable(ytestgen src/apps/ytestgen.cpp)
 add_executable(ytrace src/apps/ytrace.cpp)
@@ -124,7 +132,7 @@ target_link_libraries(ytestgen yocto_gl)
 target_link_libraries(ytrace yocto_gl)
 target_link_libraries(yscnproc yocto_gl)
 target_link_libraries(yimproc yocto_gl)
-target_link_libraries(main yocto_gl poly2tri clipper)
+target_link_libraries(main yocto_gl poly2tri clipper rhea)
 
 if(YOCTO_OPENGL)
     add_executable(yview src/apps/yview.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
