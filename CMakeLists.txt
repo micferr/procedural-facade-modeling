@@ -123,9 +123,12 @@ add_executable(yscnproc src/apps/yscnproc.cpp)
 add_executable(yimproc src/apps/yimproc.cpp)
 add_executable(main 
 	src/main.cpp 
-	src/apps/yapp_ui.h src/apps/yapp_ui.cpp 
+	src/apps/yapp_ui.h src/apps/yapp_ui.cpp
+	src/yocto_utils.h src/yocto_utils.cpp
 	src/geom_bool.h src/geom_bool.cpp
+	src/geom_utils.h src/geom_utils.cpp
 	src/tagged_shape.h src/tagged_shape.cpp
+	src/wrap_igl.h src/wrap_igl.cpp
 )
 
 target_link_libraries(ytestgen yocto_gl)

@@ -1,7 +1,12 @@
+#include <Eigen/Core>
+#include <Eigen/QR>
+
+#include "rhea/simplex_solver.hpp"
+
 #include "geom_bool.h"
 #include "tagged_shape.h"
 
-#include <igl/copyleft/cgal/mesh_boolean.h>
+#include "wrap_igl.h"
 
 namespace yb {
 
@@ -40,23 +45,7 @@ _mesh_boolean_operation(
 	Eigen::MatrixXd e_pr;
 	Eigen::MatrixXi e_tr;
 	Eigen::VectorXi J;
-	igl::MeshBooleanType bool_op;
-	switch (op) {
-	case bool_operation::INTERSECTION:
-		bool_op = igl::MESH_BOOLEAN_TYPE_INTERSECT;
-		break;
-	case bool_operation::DIFFERENCE:
-		bool_op = igl::MESH_BOOLEAN_TYPE_MINUS;
-		break;
-	case bool_operation::UNION:
-		bool_op = igl::MESH_BOOLEAN_TYPE_UNION;
-		break;
-	case bool_operation::XOR:
-		bool_op = igl::MESH_BOOLEAN_TYPE_XOR;
-		break;
-	default: break;
-	}
-	igl::copyleft::cgal::mesh_boolean(e_pa, e_ta, e_pb, e_tb, bool_op, e_pr, e_tr, J);
+	w_igl_copyleft_cgal_mesh_boolean(e_pa, e_ta, e_pb, e_tb, op, e_pr, e_tr, J);
 	
 	std::vector<ygl::vec3f> pos_r;
 	std::vector<ygl::vec3i> triangles_r;
@@ -79,6 +68,62 @@ mesh_boolean_operation(
 ) {
 	auto res = _mesh_boolean_operation(pos_a, triangles_a, pos_b, triangles_b, op);
 	return { std::get<0>(res), std::get<1>(res) };
+}
+
+std::tuple<std::vector<ygl::vec3f>, std::vector<ygl::vec3i>, std::vector<tagged_shape::tag>>
+mesh_boolean_operation(
+	const tagged_shape& shp_a,
+	const tagged_shape& shp_b,
+	bool_operation op
+) {
+	auto ptj = _mesh_boolean_operation(
+		shp_a.pos, shp_a.triangles, shp_b.pos, shp_b.triangles, op
+	);
+	const auto& pos = std::get<0>(ptj);
+	const auto& triangles = std::get<1>(ptj);
+	const auto& J = std::get<2>(ptj);
+
+	std::vector<ygl::vec3f> rpos;
+	std::vector<ygl::vec3i> rtriangles;
+	std::vector<tagged_shape::tag> tags;
+	for (int i = 0; i < triangles.size(); i++) {
+		auto orig_shp = &shp_a;
+		auto orig_triangle = J(i);
+		if (J(i) >= shp_a.triangles.size()) {
+			orig_shp = &shp_b;
+			orig_triangle -= shp_a.triangles.size();
+		}
+
+		rpos.push_back(pos[triangles[i].x]);
+		rpos.push_back(pos[triangles[i].y]);
+		rpos.push_back(pos[triangles[i].z]);
+
+		rtriangles.push_back({ i * 3,i * 3 + 1,i * 3 + 2 });
+
+		auto tag1 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].x];
+		auto tag2 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].y];
+		auto tag3 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].z];
+
+		// Pos of the spawning triangle
+		auto jpos1 = orig_shp->pos[orig_shp->triangles[orig_triangle].x];
+		auto jpos2 = orig_shp->pos[orig_shp->triangles[orig_triangle].y];
+		auto jpos3 = orig_shp->pos[orig_shp->triangles[orig_triangle].z];
+
+		// todo:
+		// use tagx and jposx to find bary coords of new rpos;
+		// --> tags.face_coords
+
+		for (int j = 0; j < 3; j++) {
+			tags.push_back({ 
+				// Take the majority of face ids if they're not all equals
+				tag1.face_id == tag2.face_id  || tag1.face_id == tag3.face_id ? 
+					tag1.face_id : tag2.face_id, 
+				{0,0} 
+			});
+		}
+	}
+
+	return std::tie(rpos, rtriangles, tags);
 }
 
 }

@@ -428,15 +428,15 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				windows_computed = true;
 				ygl::log_info("carving windows...");
 
+				yb::tagged_shape all_windows;
+
 				for (int j = 0; j < NUM_FLOORS; j++) {
 					for (int i = 0; i < NUM_WINDOWS_PER_SIDE; i++) {
 						for (int s = 0; s < bs.num_sides(); s++) {
 							auto dx = 1 / float(NUM_WINDOWS_PER_SIDE);
 							auto dy = 1 / float(NUM_FLOORS);
 							auto p = compute_position(s, i*dx + dx/2.f, j*dy + dy/2.f);
-							ygl::shape c;
-							ygl::make_cube(c.quads, c.pos, 0, 0.5f);
-							yb::to_triangle_mesh(&c);
+							ygl::shape c = yb::make_cube(c.quads, c.pos, 0.5f);
 
 							auto b_der = bezier_derivative(bs.sides[s]);
 							auto rot_xz = ygl::normalize(b_der.compute(i*dx + dx/2.f));
@@ -447,11 +447,17 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							yb::rotate_y(c.pos, rot_angle);
 							for (auto& pos : c.pos) pos += p;
 
-							auto pt = yb::mesh_boolean_operation(
-								building_shp.pos, building_shp.triangles,
-								c.pos, c.triangles, win_op
-							);
-							std::tie(building_shp.pos, building_shp.triangles) = pt;
+							// pos, triangles, tags
+							/*auto ptt = yb::mesh_boolean_operation(building_shp, c, win_op);
+							std::tie(
+								building_shp.pos, building_shp.triangles, building_shp.vertex_tags
+							) = ptt;*/
+							std::tie(all_windows.pos, all_windows.triangles) =
+								yb::mesh_boolean_operation(
+									all_windows.pos, all_windows.triangles,
+									c.pos, c.triangles, yb::bool_operation::UNION
+								);
+
 							ygl::log_info(
 								"    floor windows carved: {}/{}",
 								int(i*bs.num_sides() + s + 1),
@@ -461,8 +467,11 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					}
 					ygl::log_info("    Floors carved: {}/{}", j + 1, NUM_FLOORS);
 				}
+				all_windows.vertex_tags = std::vector<yb::tagged_shape::tag>(all_windows.pos.size(), { 7,{0,0} });
+				std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
+					yb::mesh_boolean_operation(building_shp, all_windows, win_op);
 				ygl::log_info("    converting to faceted");
-				yb::convert_to_faceted(&building_shp);
+				yb::convert_tagged_to_faceted(&building_shp);
 				building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });
 				ygl::update_gldata(app->scn);
 				ygl::log_info("    done");
