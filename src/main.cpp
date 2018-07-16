@@ -747,7 +747,7 @@ int main(int argc, char* argv[]) {
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
 	// Final settings
-	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 1.f,0.3f,0.3f });
+	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 0.8f,0.8f,0.8f });
 	ygl::instance* building_inst = ygl::make_instance("building_inst", &building_shp, building_mat);
 
 	if (DO_MERGE_SAME_POINTS) {
