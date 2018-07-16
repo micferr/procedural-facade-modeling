@@ -88,10 +88,10 @@ mesh_boolean_operation(
 	std::vector<tagged_shape::tag> tags;
 	for (int i = 0; i < triangles.size(); i++) {
 		auto orig_shp = &shp_a;
-		auto orig_triangle = J(i);
+		auto orig_triangle_index = J(i);
 		if (J(i) >= shp_a.triangles.size()) {
 			orig_shp = &shp_b;
-			orig_triangle -= shp_a.triangles.size();
+			orig_triangle_index -= shp_a.triangles.size();
 		}
 
 		rpos.push_back(pos[triangles[i].x]);
@@ -100,26 +100,26 @@ mesh_boolean_operation(
 
 		rtriangles.push_back({ i * 3,i * 3 + 1,i * 3 + 2 });
 
-		auto tag1 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].x];
-		auto tag2 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].y];
-		auto tag3 = orig_shp->vertex_tags[orig_shp->triangles[orig_triangle].z];
+		const auto& orig_triangle = orig_shp->triangles[orig_triangle_index];
+		auto tag1 = orig_shp->vertex_tags[orig_triangle.x];
+		auto tag2 = orig_shp->vertex_tags[orig_triangle.y];
+		auto tag3 = orig_shp->vertex_tags[orig_triangle.z];
 
 		// Pos of the spawning triangle
-		auto jpos1 = orig_shp->pos[orig_shp->triangles[orig_triangle].x];
-		auto jpos2 = orig_shp->pos[orig_shp->triangles[orig_triangle].y];
-		auto jpos3 = orig_shp->pos[orig_shp->triangles[orig_triangle].z];
+		auto jpos1 = orig_shp->pos[orig_triangle.x];
+		auto jpos2 = orig_shp->pos[orig_triangle.y];
+		auto jpos3 = orig_shp->pos[orig_triangle.z];
 
 		// todo:
 		// use tagx and jposx to find bary coords of new rpos;
 		// --> tags.face_coords
+		ygl::vec2f face_coords[3] = { {0,0},{0,0},{0,0} };
 
+		// Take the majority of face ids if they're not all equals
+		auto face_tag = tag1.face_id == tag2.face_id || tag1.face_id == tag3.face_id ?
+			tag1.face_id : tag2.face_id;
 		for (int j = 0; j < 3; j++) {
-			tags.push_back({ 
-				// Take the majority of face ids if they're not all equals
-				tag1.face_id == tag2.face_id  || tag1.face_id == tag3.face_id ? 
-					tag1.face_id : tag2.face_id, 
-				{0,0} 
-			});
+			tags.push_back({ face_tag, face_coords[j] });
 		}
 	}
 
