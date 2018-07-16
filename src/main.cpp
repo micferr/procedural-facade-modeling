@@ -38,6 +38,8 @@
 #include "apps/yapp_ui.h"
 using namespace std::literals;
 
+#include <gurobi_c++.h>
+
 #include "geom_bool.h"
 #include "geom_utils.h"
 #include "tagged_shape.h"

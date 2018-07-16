@@ -117,6 +117,9 @@ add_library(rhea
      message(STATUS "CGAL not found.")
  endif(CGAL_FOUND) 
 
+# Gurobi
+include_directories(C:/gurobi752/win32/include)
+
 add_executable(ytestgen src/apps/ytestgen.cpp)
 add_executable(ytrace src/apps/ytrace.cpp)
 add_executable(yscnproc src/apps/yscnproc.cpp)
@@ -135,7 +138,15 @@ target_link_libraries(ytestgen yocto_gl)
 target_link_libraries(ytrace yocto_gl)
 target_link_libraries(yscnproc yocto_gl)
 target_link_libraries(yimproc yocto_gl)
-target_link_libraries(main yocto_gl poly2tri clipper rhea)
+
+target_link_libraries(main 
+	yocto_gl 
+	poly2tri 
+	clipper 
+	rhea
+	C:/gurobi752/win32/lib/gurobi_c++md2017.lib
+	C:/gurobi752/win32/lib/gurobi75.lib
+)
 
 if(YOCTO_OPENGL)
     add_executable(yview src/apps/yview.cpp src/apps/yapp_ui.h src/apps/yapp_ui.cpp)
