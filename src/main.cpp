@@ -38,11 +38,11 @@
 #include "apps/yapp_ui.h"
 using namespace std::literals;
 
-#include <gurobi_c++.h>
-
 #include "geom_bool.h"
 #include "geom_utils.h"
 #include "tagged_shape.h"
+
+#include "optimizer.h"
 
 /// App settings
 
@@ -66,10 +66,6 @@ bool DO_VERTICAL_ROTATION;
 
 // Whether to merge overlapping vertices
 bool DO_MERGE_SAME_POINTS;
-
-// Number of windows per side and number of floors
-int NUM_WINDOWS_PER_SIDE;
-int NUM_FLOORS;
 
 /// Struct, classes and functions
 
@@ -432,43 +428,121 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 
 				yb::tagged_shape all_windows;
 
-				for (int j = 0; j < NUM_FLOORS; j++) {
-					for (int i = 0; i < NUM_WINDOWS_PER_SIDE; i++) {
-						for (int s = 0; s < bs.num_sides(); s++) {
-							auto dx = 1 / float(NUM_WINDOWS_PER_SIDE);
-							auto dy = 1 / float(NUM_FLOORS);
-							auto p = compute_position(s, i*dx + dx/2.f, j*dy + dy/2.f);
-							ygl::shape c = yb::make_cube(c.quads, c.pos, 0.5f);
+				const float cube_size = 0.5f;
+				for (int s = 0; s < bs.num_sides(); s++) {
+					struct wp_state {
+						int nx; // Number of windows along floor
+						int ny; // Number of floors
+						float sb; // Space between windows
+						float sf; // Space between floors
+						bool operator==(const wp_state& rhs) {
+							return nx == rhs.nx && ny == rhs.ny &&
+								fabs(sb - rhs.sb) < 0.05f && fabs(sf - rhs.sf) < 0.05f;
+						}
+					};
+
+					wp_state wps = { 1,1,0.2f,2.f };
+					std::function<bool(const wp_state& state)> feasible = [&](const wp_state& state) {
+						return
+							// Constraints
+							state.nx*cube_size +
+							(state.nx - 1)*state.sb
+							<=
+							bs.sides[s].length()*0.9f
+
+							&&
+
+							state.ny*cube_size +
+							(state.ny - 1)*state.sf
+							<=
+							BUILDING_HEIGHT*0.9f
+
+							&&
+
+							// Variable bounds
+							state.nx >= 1 &&
+							state.ny >= 1 &&
+							state.sb >= 0.2f &&
+							state.sb < bs.sides[s].length()*0.9f &&
+							state.sf >= 2.f &&
+							state.sf < BUILDING_HEIGHT*0.9f;
+					};
+					std::function<double(const wp_state& state)> fitness = [](auto state) {
+						return state.nx*state.ny*100.f + state.sb + state.sf;
+					};
+					std::function<std::vector<wp_state>(const wp_state&)> adjacents = [](auto s) {
+						std::vector<wp_state> adjs;
+						for (auto dnx : { -1,0,1 }) {
+							for (auto dny : { -1,0,1 }) {
+								for (auto dsb : { -0.1f, 0.f, 0.1f }) {
+									for (auto dsf : { -0.1f, 0.f, 0.1f }) {
+										if (dnx != 0 || dny != 0 || dsb != 0.f || dsf != 0.f) {
+											adjs.push_back({
+												s.nx + dnx,
+												s.ny + dny,
+												s.sb + dsb,
+												s.sf + dsf
+											});
+										}
+									}
+								}
+							}
+						}
+						return adjs;
+					};
+					auto sol = optimize_greedy(
+						wps, feasible, fitness, adjacents
+					);
+
+					auto num_windows = sol.nx;
+					auto num_floors = sol.ny;
+					auto space_between_windows = sol.sb;
+					auto space_between_floors = sol.sf;
+					auto space_from_edges =
+						(bs.sides[s].length() - num_windows*cube_size - (num_windows - 1)*space_between_windows)/2.f;
+					auto space_from_floor_ceiling =
+						(BUILDING_HEIGHT - num_floors*cube_size - (num_floors - 1)*space_between_floors) / 2.f;
+
+					/*std::cout
+						<< "----------------------------------------\n"
+						<< "X:\n"
+						<< "  Num windows: " << num_windows << std::endl
+						<< "  Space between windows: " << space_between_windows << std::endl
+						<< "  Space from edges: " << space_from_edges << std::endl
+						<< "  Facade width: " << bs.sides[s].length() << std::endl
+						<< "Y:\n"
+						<< "  Num floors: " << num_floors << std::endl
+						<< "  Space between floors: " << space_between_floors << std::endl
+						<< "  Space from top and bottom: " << space_from_floor_ceiling << std::endl
+						<< "  Building height: " << BUILDING_HEIGHT << std::endl
+						<< "----------------------------------------\n";*/
+
+					for (int i = 0; i < num_windows; i++) {
+						for (int j = 0; j < num_floors; j++) {
+							auto x = (space_from_edges + cube_size / 2.f + (cube_size + space_between_windows)*i) / bs.sides[s].length();
+							auto y = (space_from_floor_ceiling + cube_size / 2.f + (cube_size + space_between_floors)*j) / BUILDING_HEIGHT;
+							auto p = compute_position(s, x, y);
+							ygl::shape c = yb::make_cube(c.quads, c.pos, cube_size);
 
 							auto b_der = bezier_derivative(bs.sides[s]);
-							auto rot_xz = ygl::normalize(b_der.compute(i*dx + dx/2.f));
-							auto rot_angle = yb::get_angle(rot_xz)-yb::pi/2.f;
+							auto rot_xz = ygl::normalize(b_der.compute(x));
+							auto rot_angle = yb::get_angle(rot_xz) - yb::pi/2.f;
 							if (DO_VERTICAL_ROTATION) {
-								rot_angle += rotation_path(j*dy + dy/2.f);
+								rot_angle += rotation_path(y);
 							}
 							yb::rotate_y(c.pos, rot_angle);
 							for (auto& pos : c.pos) pos += p;
 
 							// pos, triangles, tags
-							/*auto ptt = yb::mesh_boolean_operation(building_shp, c, win_op);
-							std::tie(
-								building_shp.pos, building_shp.triangles, building_shp.vertex_tags
-							) = ptt;*/
-							std::tie(all_windows.pos, all_windows.triangles) =
-								yb::mesh_boolean_operation(
-									all_windows.pos, all_windows.triangles,
-									c.pos, c.triangles, yb::bool_operation::UNION
-								);
-
-							ygl::log_info(
-								"    floor windows carved: {}/{}",
-								int(i*bs.num_sides() + s + 1),
-								int(NUM_WINDOWS_PER_SIDE*bs.num_sides())
+							std::tie(all_windows.pos, all_windows.triangles) = yb::mesh_boolean_operation(
+								all_windows.pos, all_windows.triangles,
+								c.pos, c.triangles,
+								yb::bool_operation::UNION
 							);
 						}
 					}
-					ygl::log_info("    Floors carved: {}/{}", j + 1, NUM_FLOORS);
 				}
+
 				all_windows.vertex_tags = std::vector<yb::tagged_shape::tag>(all_windows.pos.size(), { 7,{0,0} });
 				std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
 					yb::mesh_boolean_operation(building_shp, all_windows, win_op);
@@ -651,12 +725,6 @@ int main(int argc, char* argv[]) {
 	);
 	DO_MERGE_SAME_POINTS = ygl::parse_flag(
 		parser, "--no-merge-points", "-nm", "Do not merge overlapping vertices after building generation.", true
-	);
-	NUM_WINDOWS_PER_SIDE = ygl::parse_opt(
-		parser, "--num-windows", "-nw", "Number of windows, per side, per floor.", 5
-	);
-	NUM_FLOORS = ygl::parse_opt(
-		parser, "--num-floors", "-nf", "Number of floors.", 6
 	);
 
 	app->eyelight = ygl::parse_flag(
