@@ -99,4 +99,73 @@ state optimize_bfs(
 	return best_state;
 }
 
+template<class state>
+state optimize_local_beam(
+	state initial_state,
+	const std::function<bool(const state&)>& feasible,
+	const std::function<double(const state&)>& fitness,
+	const std::function<std::vector<state>(const state&)>& adjacents,
+	unsigned max_beam_size = 100
+) {
+	if (!feasible(initial_state)) throw std::exception("Initial state is not feasible");
+	if (max_beam_size < 1) throw std::exception("Invalid beam size");
+
+	struct state_comparator {
+		std::function<double(const state&)> f;
+
+		state_comparator(const std::function<double(const state&)>& _f) {
+			f = _f;
+		}
+
+		bool operator()(const state& lhs, const state& rhs) {
+			return f(lhs) < f(rhs);
+		}
+	};
+
+	state_comparator state_cmp(fitness);
+	std::priority_queue<state, std::vector<state>, state_comparator> frontier(state_cmp);
+	std::vector<state> visited;
+
+	frontier.emplace(initial_state);
+	visited.push_back(initial_state);
+	
+	auto best_state = initial_state;
+	auto best_fitness = fitness(initial_state);
+	while (!frontier.empty()) {
+		std::priority_queue<state, std::vector<state>, state_comparator> adjs(state_cmp);
+
+		// Generate all feasible adjacents
+		while (!frontier.empty()) {
+			auto s = frontier.top();
+			frontier.pop();
+
+			for (const auto& adj : adjacents(s)) {
+				if (std::find(visited.begin(), visited.end(), adj) == visited.end()) {
+					if (feasible(adj)) {
+						adjs.emplace(adj);
+						visited.push_back(adj);
+					}
+				}
+			}
+		}
+
+		// No adjacents
+		if (adjs.empty()) break;
+		
+		auto best_adj = adjs.top();
+		if (fitness(best_adj) > fitness(best_state)) {
+			best_state = best_adj;
+			best_fitness = fitness(best_adj);
+		}
+
+		auto max_capacity = max_beam_size;
+		while (max_capacity-- && !adjs.empty()) {
+			frontier.emplace(adjs.top());
+			adjs.pop();
+		}
+	}
+
+	return best_state;
+}
+
 #endif // OPTIMIZER_H
