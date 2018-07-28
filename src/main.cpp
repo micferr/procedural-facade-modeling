@@ -490,8 +490,9 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						}
 						return adjs;
 					};
-					auto sol = optimize_local_beam(
-						wps, feasible, fitness, adjacents, 20
+
+					auto sol = optimize_simulated_annealing(
+						wps, feasible, fitness, adjacents, 1000
 					);
 
 					auto num_windows = sol.nx;

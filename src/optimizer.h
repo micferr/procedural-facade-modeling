@@ -6,6 +6,8 @@
 #include <set>
 #include <vector>
 
+#define CHECK_FEASIBLE if (!feasible(initial_state)) throw std::exception("Initial state is not feasible");
+
 template<class state>
 state optimize_greedy(
 	state initial_state,
@@ -14,7 +16,7 @@ state optimize_greedy(
 	const std::function<std::vector<state>(const state&)>& adjacents,
 	long max_steps = -1
 ) {
-	if (!feasible(initial_state)) throw std::exception("Initial state is not feasible");
+	CHECK_FEASIBLE;
 
 	long steps = 0;
 	auto s = initial_state;
@@ -65,7 +67,7 @@ state optimize_bfs(
 	const std::function<double(const state&)>& fitness,
 	const std::function<std::vector<state>(const state&)>& adjacents
 ) {
-	if (!feasible(initial_state)) throw std::exception("Initial state is not feasible");
+	CHECK_FEASIBLE;
 
 	auto best_state = initial_state;
 	auto best_fitness = fitness(initial_state);
@@ -166,6 +168,37 @@ state optimize_local_beam(
 	}
 
 	return best_state;
+}
+
+template<class state>
+state optimize_simulated_annealing(
+	state initial_state,
+	const std::function<bool(const state&)>& feasible,
+	const std::function<double(const state&)>& fitness,
+	const std::function<std::vector<state>(const state&)>& adjacents,
+	unsigned max_iterations = UINT32_MAX
+) {
+	CHECK_FEASIBLE;
+
+	auto s = initial_state;
+	for (auto i = 0; i < max_iterations; i++) {
+		auto adjs = adjacents(s);
+		adjs.erase(
+			std::remove_if(adjs.begin(), adjs.end(), [&](const auto& _s) {return !feasible(_s);}),
+			adjs.end()
+		);
+		if (adjs.size() == 0) return s;
+		auto adj = adjs[rand() % adjs.size()];
+		
+		auto delta_fitness = fitness(s) - fitness(adj);
+		if (delta_fitness < 0.f) s = adj;
+		else {
+			auto t = (max_iterations - i) / float(max_iterations);
+			auto p = expf(-delta_fitness/t);
+			if (float(rand()) / float(RAND_MAX) <= p) s = adj;
+		}
+	}
+	return s;
 }
 
 #endif // OPTIMIZER_H
