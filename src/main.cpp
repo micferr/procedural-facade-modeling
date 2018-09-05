@@ -42,7 +42,12 @@ using namespace std::literals;
 #include "geom_utils.h"
 #include "tagged_shape.h"
 
+#include <gurobi_c++.h>
 #include "optimizer.h"
+
+/// Globals
+
+GRBEnv env = GRBEnv();
 
 /// App settings
 
@@ -174,7 +179,7 @@ bezier<ygl::vec3f> vertical_path({
 });
 auto vert_derivative = bezier_derivative(vertical_path);
 
-bezier_sides<ygl::vec2f> bs(
+/*bezier_sides<ygl::vec2f> bs(
 {
 	{ -4,-4 },{ -2,0 },{ 0,-8 },{ 2,-4 },
 	{ 1,-1 },{ 2,2 },
@@ -183,6 +188,13 @@ bezier_sides<ygl::vec2f> bs(
 {
 	0,3,5,7
 }
+);*/
+
+bezier_sides<ygl::vec2f> bs(
+{ 
+	{-5,-5},{0,-2},{5,-5},{8,0},{5,5},{0,2},{-5,5}//,{-8,0}
+}, 
+{ 0,2,4,6 }
 );
 
 // Rotation of x and z coordinates, in radiants, around y-axis
@@ -429,82 +441,42 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				yb::tagged_shape all_windows;
 
 				const float cube_size = 0.5f;
+
+				optimization_problem prob_h;
+				prob_h.add_parameter(parameter("nw", 1.f, 20.f));
+				prob_h.add_parameter(parameter("sb", 2.f, 10.f));
+				prob_h.add_objective([&](const auto& params) {
+					auto nw = params[0].get_rval();
+					auto sb = params[1].get_rval();
+					auto excess_penalty = BUILDING_HEIGHT*0.9f - (nw*cube_size + (nw - 1)*sb);
+					excess_penalty = excess_penalty < 0 ? excess_penalty * 100000.f : 0.f;
+					return nw * 100 + sb - fmodf(nw, 1.0)*100.0 + excess_penalty;
+				});
+				particle_swarm(prob_h, 0.8f, 2.f, 2.f, 100, 100);
+
 				for (int s = 0; s < bs.num_sides(); s++) {
-					struct wp_state {
-						int nx; // Number of windows along floor
-						int ny; // Number of floors
-						float sb; // Space between windows
-						float sf; // Space between floors
-						bool operator==(const wp_state& rhs) {
-							return nx == rhs.nx && ny == rhs.ny &&
-								fabs(sb - rhs.sb) < 0.05f && fabs(sf - rhs.sf) < 0.05f;
-						}
-					};
+					optimization_problem prob_w;
+					prob_w.add_parameter(parameter("nw", 1.f, 20.f));
+					prob_w.add_parameter(parameter("sb", 1.f, 10.f));
+					prob_w.add_objective([&](const auto& params) {
+						auto nw = params[0].get_rval();
+						auto sb = params[1].get_rval();
+						auto excess_penalty = bs.sides[s].length()*0.9f - (nw*cube_size + (nw - 1)*sb);
+						excess_penalty = excess_penalty < 0 ? excess_penalty * 100000.f : 0.f;
+						return nw * 100 + sb - fmodf(nw, 1.0)*1000.0 + excess_penalty;
+					});
+					particle_swarm(prob_w, 0.8f, 2.f, 2.f, 300, 300);
 
-					wp_state wps = { 1,1,0.2f,2.f };
-					std::function<bool(const wp_state& state)> feasible = [&](const wp_state& state) {
-						return
-							// Constraints
-							state.nx*cube_size +
-							(state.nx - 1)*state.sb
-							<=
-							bs.sides[s].length()*0.9f
-
-							&&
-
-							state.ny*cube_size +
-							(state.ny - 1)*state.sf
-							<=
-							BUILDING_HEIGHT*0.9f
-
-							&&
-
-							// Variable bounds
-							state.nx >= 1 &&
-							state.ny >= 1 &&
-							state.sb >= 0.2f &&
-							state.sb < bs.sides[s].length()*0.9f &&
-							state.sf >= 2.f &&
-							state.sf < BUILDING_HEIGHT*0.9f;
-					};
-					std::function<double(const wp_state& state)> fitness = [](auto state) {
-						return state.nx*state.ny*100.f + state.sb + state.sf;
-					};
-					std::function<std::vector<wp_state>(const wp_state&)> adjacents = [](auto s) {
-						std::vector<wp_state> adjs;
-						for (auto dnx : { -1,0,1 }) {
-							for (auto dny : { -1,0,1 }) {
-								for (auto dsb : { -0.1f, 0.f, 0.1f }) {
-									for (auto dsf : { -0.1f, 0.f, 0.1f }) {
-										if (dnx != 0 || dny != 0 || dsb != 0.f || dsf != 0.f) {
-											adjs.push_back({
-												s.nx + dnx,
-												s.ny + dny,
-												s.sb + dsb,
-												s.sf + dsf
-											});
-										}
-									}
-								}
-							}
-						}
-						return adjs;
-					};
-
-					auto sol = optimize_simulated_annealing(
-						wps, feasible, fitness, adjacents, 1000
-					);
-
-					auto num_windows = sol.nx;
-					auto num_floors = sol.ny;
-					auto space_between_windows = sol.sb;
-					auto space_between_floors = sol.sf;
+					auto num_windows = int(prob_w.get_params()[0].get_rval());
+					auto num_floors = int(prob_h.get_params()[0].get_rval());
+					auto space_between_windows = prob_w.get_params()[1].get_rval();
+					auto space_between_floors = prob_h.get_params()[1].get_rval();
 					auto space_from_edges =
 						(bs.sides[s].length() - num_windows*cube_size - (num_windows - 1)*space_between_windows)/2.f;
 					auto space_from_floor_ceiling =
 						(BUILDING_HEIGHT - num_floors*cube_size - (num_floors - 1)*space_between_floors) / 2.f;
 
-					/*std::cout
+					std::cout
 						<< "----------------------------------------\n"
 						<< "X:\n"
 						<< "  Num windows: " << num_windows << std::endl
@@ -516,7 +488,7 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						<< "  Space between floors: " << space_between_floors << std::endl
 						<< "  Space from top and bottom: " << space_from_floor_ceiling << std::endl
 						<< "  Building height: " << BUILDING_HEIGHT << std::endl
-						<< "----------------------------------------\n";*/
+						<< "----------------------------------------\n";
 
 					for (int i = 0; i < num_windows; i++) {
 						for (int j = 0; j < num_floors; j++) {
@@ -524,10 +496,23 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							auto y = (space_from_floor_ceiling + cube_size / 2.f + (cube_size + space_between_floors)*j) / BUILDING_HEIGHT;
 							auto p = compute_position(s, x, y);
 							ygl::shape c = yb::make_cube(c.quads, c.pos, cube_size);
+							if ((i!=0 && j!=0) || (i==0 && j == 0) || i==num_windows-1 || j == num_floors-1 || s!=3) continue;
+							if (true) {
+								if (i == 0) {
+									for (auto& cp : c.pos)
+										if (cp.x > 0)
+											cp.x = (num_windows*cube_size + (num_windows - 1)*space_between_windows - cube_size / 2.f);
+								}
+								if (j == 0) {
+									for (auto& cp : c.pos)
+										if (cp.y > 0)
+											cp.y = num_floors*cube_size + (num_floors - 1)*space_between_floors - cube_size / 2.f;
+								}
+							}
 
 							auto b_der = bezier_derivative(bs.sides[s]);
 							auto rot_xz = ygl::normalize(b_der.compute(x));
-							auto rot_angle = yb::get_angle(rot_xz) - yb::pi/2.f;
+							auto rot_angle = yb::get_angle(rot_xz) /*- yb::pi/2.f*/;
 							if (DO_VERTICAL_ROTATION) {
 								rot_angle += rotation_path(y);
 							}
@@ -535,11 +520,13 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							for (auto& pos : c.pos) pos += p;
 
 							// pos, triangles, tags
+							printf("AAAAA");
 							std::tie(all_windows.pos, all_windows.triangles) = yb::mesh_boolean_operation(
 								all_windows.pos, all_windows.triangles,
 								c.pos, c.triangles,
 								yb::bool_operation::UNION
 							);
+							printf("BBBBB\n");
 						}
 					}
 				}
@@ -701,6 +688,7 @@ void run_ui(app_state* app) {
 }
 
 int main(int argc, char* argv[]) {
+
 	// create empty scene
 	auto app = new app_state();
 	app->navigation_fps = true;
@@ -818,7 +806,7 @@ int main(int argc, char* argv[]) {
 		building_shp.triangles.push_back({ t.x + bps, t.y + bps, t.z + bps });
 
 	// Final settings
-	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 0.8f,0.8f,0.8f });
+	ygl::material* building_mat = ygl::make_matte_material("building_mat", { 1.f,0.6f,0.6f });
 	ygl::instance* building_inst = ygl::make_instance("building_inst", &building_shp, building_mat);
 
 	if (DO_MERGE_SAME_POINTS) {
@@ -850,6 +838,18 @@ int main(int argc, char* argv[]) {
 	top_cam.name = "top camera";
 	top_cam.frame = ygl::lookat_frame({ 0,BUILDING_HEIGHT*2.f,0 }, { 0,0,0 }, { 0,0,-1 });
 	app->scn->cameras.push_back(&top_cam);
+	ygl::camera right_cam = *app->scn->cameras.front();
+	right_cam.name = "right camera";
+	right_cam.frame = ygl::lookat_frame({ 20,0,0 }, { 0,0,0 }, { 0,0,0 });
+	app->scn->cameras.push_back(&right_cam);
+	ygl::camera left_cam = *app->scn->cameras.front();
+	left_cam.name = "left camera";
+	left_cam.frame = ygl::lookat_frame({ -20,0,0 }, { 0,0,0 }, { 0,1,0 });
+	app->scn->cameras.push_back(&left_cam);
+	ygl::camera back_cam = *app->scn->cameras.front();
+	back_cam.name = "back camera";
+	back_cam.frame = ygl::lookat_frame({ 0,0,-20 }, { 0,0,0 }, { 0,1,0 });
+	app->scn->cameras.push_back(&back_cam);
 	ygl::add_missing_names(app->scn);
 	ygl::add_missing_tangent_space(app->scn);
 	app->cam = app->scn->cameras[0];
