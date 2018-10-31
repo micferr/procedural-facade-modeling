@@ -192,6 +192,8 @@ bezier_sides<ygl::vec2f> bs(
 // Rotation of x and z coordinates, in radiants, around y-axis
 auto rotation_path = [](float t) {return 3.f*t;};
 
+// Computes the position, in world coordinates, of a layout element on the
+// building described by bs, BUILDING_HEIGHT, DO_VERTICAL_[BEZIER/ROTATION], INCLINED_FLOORS
 auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
 	auto xz = bs.compute(side, x_t);
 	if (DO_VERTICAL_ROTATION) {
@@ -228,6 +230,50 @@ auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
 
 	return pos;
 };
+
+// Computes the world coordinates and of a layout position for a given building.
+// Returned values are operation success (it may fail e.g. if there's no face with 
+// the required face id), world coordinates and shape normal on said position
+//
+// todo: use optionals? (needs C++17)
+std::tuple<bool, ygl::vec3f, ygl::vec3f> compute_layout_position(
+	yb::tagged_shape& ts,
+	int face_id,
+	ygl::vec2f face_coord
+) {
+	if (ts.face_ids().count(face_id) == 0) return { false,{},{} };
+
+	// todo: more efficient algorithm
+	for (const auto& t : ts.triangles) { // Assuming a triangle mesh
+		const auto& tag1 = ts.vertex_tags[t.x];
+		const auto& tag2 = ts.vertex_tags[t.y];
+		const auto& tag3 = ts.vertex_tags[t.z];
+
+		if (tag1.face_id == face_id) { 
+			const auto& c1 = tag1.face_coord;
+			const auto& c2 = tag2.face_coord;
+			const auto& c3 = tag3.face_coord;
+
+			auto sign1 = ygl::dot(c2 - c1, face_coord);
+			auto sign2 = ygl::dot(c3 - c2, face_coord);
+			auto sign3 = ygl::dot(c1 - c3, face_coord);
+
+			const auto& v1 = ts.pos[t.x];
+			const auto& v2 = ts.pos[t.y];
+			const auto& v3 = ts.pos[t.z];
+
+			if (
+				(sign1 >= 0 && sign2 >= 0 && sign3 >= 0) ||
+				(sign1 <= 0 && sign2 <= 0 && sign3 <= 0)
+				) {
+				// Todo: coords are currently approximated
+				return { true,(v1 + v2 + v3) / 3, ygl::cross(v2 - v1,v3 - v2) };
+			}
+		}
+	}
+
+	return { false,{},{} };
+}
 
 // Interactive viewer options
 std::map<int, bool> is_face_highlighted;
@@ -543,15 +589,10 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						auto wy = params[4].get_rval();
 
 						auto obj = 0;
-						//obj += bw*10.f; // Maximize balcony width
 						auto excess = (bw+0.1) / 2 - (wd*bs.sides[0].length());
 						if (excess > 0) {
 							obj -= excess*100.f; // Penalty on overlapping balconies
 						}
-						/*excess = wy - 0.05 - bh - window_height / 2.f - door_height;
-						if (excess < 0) {
-							obj += excess * 100.f; // Penalty on window-door overlap
-						}*/
 						return obj;
 					});
 					particle_swarm(s0_op, 0.8, 1.4, 1.4, 200, 200);
