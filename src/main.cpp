@@ -67,6 +67,7 @@ bool DO_VERTICAL_BEZIER;
 
 // Assuming DO_VERTICAL_BEZIER == true, whether floors are perpendicular
 // to the bezier's derivative
+// (DEPRECATED)
 bool INCLINED_FLOORS;
 
 // Whether the building rotates around itself
@@ -231,9 +232,9 @@ auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
 	return pos;
 };
 
-// Computes the world coordinates and of a layout position for a given building.
+// Computes the world coordinates and face normal of a layout position for a given building.
 // Returned values are operation success (it may fail e.g. if there's no face with 
-// the required face id), world coordinates and shape normal on said position
+// the required face id), world coordinates and shape normal on said position.
 //
 // todo: use optionals? (needs C++17)
 std::tuple<bool, ygl::vec3f, ygl::vec3f> compute_layout_position(
@@ -254,20 +255,25 @@ std::tuple<bool, ygl::vec3f, ygl::vec3f> compute_layout_position(
 			const auto& c2 = tag2.face_coord;
 			const auto& c3 = tag3.face_coord;
 
-			auto sign1 = ygl::dot(c2 - c1, face_coord);
-			auto sign2 = ygl::dot(c3 - c2, face_coord);
-			auto sign3 = ygl::dot(c1 - c3, face_coord);
+			// see http://blackpawn.com/texts/pointinpoly/
+			const auto v2 = face_coord - c1;
+			const auto v0 = c2 - c1;
+			const auto v1 = c3 - c1;
+			using ygl::dot;
+			auto u =
+				(dot(v1, v1)*dot(v2, v0) - dot(v1, v0)*dot(v2, v1)) /
+				(dot(v0, v0)*dot(v1, v1) - dot(v0, v1)*dot(v1, v0));
+			auto v =
+				(dot(v0, v0)*dot(v2, v1) - dot(v0, v1)*dot(v2, v0)) /
+				(dot(v0, v0)*dot(v1, v1) - dot(v0, v1)*dot(v1, v0));
+			if (u >= 0 && v >= 0 && u + v <= 1.f) {
+				const auto& p1 = ts.pos[t.x];
+				const auto& p2 = ts.pos[t.y];
+				const auto& p3 = ts.pos[t.z];
 
-			const auto& v1 = ts.pos[t.x];
-			const auto& v2 = ts.pos[t.y];
-			const auto& v3 = ts.pos[t.z];
-
-			if (
-				(sign1 >= 0 && sign2 >= 0 && sign3 >= 0) ||
-				(sign1 <= 0 && sign2 <= 0 && sign3 <= 0)
-				) {
-				// Todo: coords are currently approximated
-				return { true,(v1 + v2 + v3) / 3, ygl::cross(v2 - v1,v3 - v2) };
+				const auto pos = p1 + (p2 - p1)*u + (p3 - p1)*v;
+				const auto norm = ygl::cross(p2 - p1, p3 - p2);
+				return { true, pos, norm };
 			}
 		}
 	}
@@ -541,16 +547,16 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							if (s == 0) continue;
 							auto x = (space_from_edges + cube_size / 2.f + (cube_size + space_between_windows)*i) / bs.sides[s].length();
 							auto y = (space_from_floor_ceiling + cube_size / 2.f + (cube_size + space_between_floors)*j) / BUILDING_HEIGHT;
-							auto p = compute_position(s, x, y);
+							auto clp = compute_layout_position(building_shp, s, { x,y });
+							if (!std::get<0>(clp)) {
+								continue;
+							} 
+							auto p = std::get<1>(clp);
 							ygl::shape c = yb::make_cube(c.quads, c.pos, cube_size);
 
-							auto b_der = bezier_derivative(bs.sides[s]);
-							auto rot_xz = ygl::normalize(b_der.compute(x));
-							auto rot_angle = yb::get_angle(rot_xz) /*- yb::pi/2.f*/;
-							if (DO_VERTICAL_ROTATION) {
-								rot_angle += rotation_path(y);
-							}
-							yb::rotate_y(c.pos, rot_angle);
+							// todo: generalize rotation (needs up vector)
+							auto n = std::get<2>(clp);
+							yb::rotate_y(c.pos, -yb::get_angle({n.x,n.z}));
 							for (auto& pos : c.pos) pos += p;
 
 							// pos, triangles, tags
