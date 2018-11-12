@@ -26,6 +26,15 @@
 // POSSIBILITY OF SUCH DAMAGE.
 //
 
+/// Notes & Todos
+
+// place_layout_element bug: output model's face coords broken
+// Temporary fix: merge all layout elements after calling transform_layout_element,
+//		then use merge the resulting mesh on the target building
+
+// Balconies are represented through a mix of layout- and world-coordinates,
+// a better formalization is needed.
+
 /// Includes
 
 #include <cstdio>
@@ -238,12 +247,10 @@ auto compute_position = [&](int side, float x_t, float y_t)->ygl::vec3f {
 //
 // todo: use optionals? (needs C++17)
 std::tuple<bool, ygl::vec3f, ygl::vec3f> compute_layout_position(
-	yb::tagged_shape& ts,
+	const yb::tagged_shape& ts,
 	int face_id,
 	ygl::vec2f face_coord
 ) {
-	if (ts.face_ids().count(face_id) == 0) return { false,{},{} };
-
 	// todo: more efficient algorithm
 	for (const auto& t : ts.triangles) { // Assuming a triangle mesh
 		const auto& tag1 = ts.vertex_tags[t.x];
@@ -279,6 +286,52 @@ std::tuple<bool, ygl::vec3f, ygl::vec3f> compute_layout_position(
 	}
 
 	return { false,{},{} };
+}
+
+/**
+ * Computes the world coordinates of a layout element 
+ * and applies the necessary transformations.
+ *
+ * The input shape src is modified so that it's ready to be merged with 
+ * the destination model dst.
+ *
+ * Returns true iff the layout coordinates can be converted to world 
+ * coordinates (i.e. if the layout element can be placed).
+ */
+bool transform_layout_element(
+	yb::tagged_shape& src,
+	yb::tagged_shape& dst,
+	yb::tagged_shape::tag layout_coords
+	) {
+	auto clp = compute_layout_position(dst, layout_coords.face_id, layout_coords.face_coord);
+	if (!std::get<0>(clp)) {
+		return false;
+	}
+	auto p = std::get<1>(clp);
+
+	// todo: generalize rotation (needs up vector)
+	auto n = std::get<2>(clp);
+	yb::rotate_y(src.pos, -yb::get_angle({ n.x,n.z })-yb::pi/2.f);
+	for (auto& pos : src.pos) pos += p;
+
+	return true;
+}
+
+bool place_layout_element(
+	yb::tagged_shape& src,
+	yb::tagged_shape& dst,
+	const yb::tagged_shape::tag layout_coords
+	) {
+	if (transform_layout_element(src, dst, layout_coords)) {
+		std::tie(dst.pos, dst.triangles, dst.vertex_tags) = yb::mesh_boolean_operation(
+			dst, src,
+			yb::bool_operation::UNION
+		);
+		ygl::log_info("TRUE");
+		return true;
+	}
+	ygl::log_info("FALSE");
+	return false;
 }
 
 // Interactive viewer options
@@ -489,7 +542,7 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				windows_computed = true;
 				ygl::log_info("carving windows...");
 
-				yb::tagged_shape all_windows;
+				yb::tagged_shape decorations;
 
 				const float cube_size = 0.5f;
 
@@ -526,28 +579,13 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					auto space_from_floor_ceiling =
 						(BUILDING_HEIGHT - num_floors*cube_size - (num_floors - 1)*space_between_floors) / 2.f;
 
-					if (DEBUG_PRINT) {
-						std::cout
-							<< "----------------------------------------\n"
-							<< "X:\n"
-							<< "  Num windows: " << num_windows << std::endl
-							<< "  Space between windows: " << space_between_windows << std::endl
-							<< "  Space from edges: " << space_from_edges << std::endl
-							<< "  Facade width: " << bs.sides[s].length() << std::endl
-							<< "Y:\n"
-							<< "  Num floors: " << num_floors << std::endl
-							<< "  Space between floors: " << space_between_floors << std::endl
-							<< "  Space from top and bottom: " << space_from_floor_ceiling << std::endl
-							<< "  Building height: " << BUILDING_HEIGHT << std::endl
-							<< "----------------------------------------\n";
-					}
-
 					for (int i = 0; i < num_windows; i++) {
 						for (int j = 0; j < num_floors; j++) {
 							if (s == 0) continue;
+
 							auto x = (space_from_edges + cube_size / 2.f + (cube_size + space_between_windows)*i) / bs.sides[s].length();
 							auto y = (space_from_floor_ceiling + cube_size / 2.f + (cube_size + space_between_floors)*j) / BUILDING_HEIGHT;
-							auto clp = compute_layout_position(building_shp, s, { x,y });
+							/*auto clp = compute_layout_position(building_shp, s, { x,y });
 							if (!std::get<0>(clp)) {
 								continue;
 							} 
@@ -557,11 +595,13 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 							// todo: generalize rotation (needs up vector)
 							auto n = std::get<2>(clp);
 							yb::rotate_y(c.pos, -yb::get_angle({n.x,n.z}));
-							for (auto& pos : c.pos) pos += p;
+							for (auto& pos : c.pos) pos += p;*/
+							yb::tagged_shape c = yb::make_cube(c.quads, c.pos, cube_size, 7);
+							transform_layout_element(c, building_shp, { s,{x,y} });
 
 							// pos, triangles, tags
-							std::tie(all_windows.pos, all_windows.triangles) = yb::mesh_boolean_operation(
-								all_windows.pos, all_windows.triangles,
+							std::tie(decorations.pos, decorations.triangles) = yb::mesh_boolean_operation(
+								decorations.pos, decorations.triangles,
 								c.pos, c.triangles,
 								yb::bool_operation::UNION
 							);
@@ -579,14 +619,14 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					float door_height = BUILDING_HEIGHT*door_height_ratio;
 					float window_width = rng.rand(1.5f, 2.f);
 					float window_height = rng.rand(1.5f, 2.f);
-					float w_from_b = rng.rand(0.5f, 1.25f);
+					float win_from_balcony = rng.rand(0.5f, 1.25f);
 
 					optimization_problem s0_op;
 					s0_op.add_parameter(parameter("doorx", door_width_ratio/2.f, 1.f-door_width_ratio/2.f));
 					s0_op.add_parameter(parameter("balcony_height", 0.2f, 1.f));
 					s0_op.add_parameter(parameter("balcony_width", window_width*1.5f, 2.5f*window_width));
 					s0_op.add_parameter(parameter("win_dist_from_center", 0.f, 0.3f));
-					s0_op.add_parameter(parameter("win y", door_height_ratio+0.15f, 0.9f));
+					s0_op.add_parameter(parameter("win y", door_height_ratio + 0.15f, 0.9f));
 					s0_op.add_objective([&](const auto& params) {
 						auto doorx = params[0].get_rval();
 						auto bh = params[1].get_rval();
@@ -595,10 +635,17 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						auto wy = params[4].get_rval();
 
 						auto obj = 0;
+						// Penalty on overlapping balconies
 						auto excess = (bw+0.1) / 2 - (wd*bs.sides[0].length());
 						if (excess > 0) {
-							obj -= excess*100.f; // Penalty on overlapping balconies
+							obj -= excess*100.f; 
 						}
+						// Penalty on door-balcony intersection
+						excess = door_height - (wy*BUILDING_HEIGHT - window_height/2 - win_from_balcony - bh/2);
+						if (excess > 0) {
+							obj -= excess*100.f;
+						}
+
 						return obj;
 					});
 					particle_swarm(s0_op, 0.8, 1.4, 1.4, 200, 200);
@@ -610,66 +657,60 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					auto wd = pars[3].get_rval();
 					auto wy = pars[4].get_rval();
 
+					// Door
 					yb::tagged_shape door = yb::make_cube(door.quads, door.pos, 1.f, 7);
 					for (auto& pos : door.pos) {
+						// Size
 						pos.x *= door_width;
 						pos.y *= door_height;
+						// Move origin to the floor
+						pos.y += door_height / 2.f;
 					}
-					auto p = compute_position(0, doorx, 0);
-					auto b_der = bezier_derivative(bs.sides[0]);
-					auto rot_xz = ygl::normalize(b_der.compute(doorx));
-					auto rot_angle = yb::get_angle(rot_xz) /*- yb::pi/2.f*/;
-					yb::rotate_y(door.pos, rot_angle);
-					for (auto& pos : door.pos) { 
-						pos += p; 
-						pos.y += door_height / 2.f; 
-					};
-					std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
-						yb::mesh_boolean_operation(building_shp, door, yb::bool_operation::UNION);
+					transform_layout_element(door, building_shp, { 0,{doorx, 0} });
+					std::tie(decorations.pos, decorations.triangles) = yb::mesh_boolean_operation(
+						decorations.pos, decorations.triangles,
+						door.pos, door.triangles,
+						yb::bool_operation::UNION
+					);
+					// place_layout_element(door, building_shp, { 0,{doorx, 0} });
 
 					for (int wi = 0; wi < 2; wi++) {
+						// Window
 						yb::tagged_shape w = yb::make_cube(w.quads, w.pos, 1.f, 7);
 						for (auto& pos : w.pos) {
 							pos.x *= window_width;
 							pos.y *= window_height;
 						}
 						auto sign = wi ? +1 : -1;
-						auto p = compute_position(0, 0.5f + wd*sign, 0);
-						auto b_der = bezier_derivative(bs.sides[0]);
-						auto rot_xz = ygl::normalize(b_der.compute(0.5f + wd*sign));
-						auto rot_angle = yb::get_angle(rot_xz) /*- yb::pi/2.f*/;
-						yb::rotate_y(w.pos, rot_angle);
-						for (auto& pos : w.pos) {
-							pos += p;
-							pos.y += wy*BUILDING_HEIGHT;
-						};
-						std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
-							yb::mesh_boolean_operation(building_shp, w, yb::bool_operation::UNION);
+						transform_layout_element(w, building_shp, { 0,{0.5f + wd*sign, wy} });
+						std::tie(decorations.pos, decorations.triangles) = yb::mesh_boolean_operation(
+							decorations.pos, decorations.triangles,
+							w.pos, w.triangles,
+							yb::bool_operation::UNION
+						);
 
 						// Balconies
 						w = yb::make_cube(w.quads, w.pos, 1.f, 7);
 						for (auto& pos : w.pos) {
 							pos.x *= bw;
-							pos.y *= bh;
+							pos.y *= bh; 
 						}
 						sign = wi ? +1 : -1;
-						p = compute_position(0, 0.5f + wd*sign, 0);
-						b_der = bezier_derivative(bs.sides[0]);
-						rot_xz = ygl::normalize(b_der.compute(0.5f + wd*sign));
-						rot_angle = yb::get_angle(rot_xz) /*- yb::pi/2.f*/;
-						yb::rotate_y(w.pos, rot_angle);
-						for (auto& pos : w.pos) {
-							pos += p;
-							pos.y += wy*BUILDING_HEIGHT - window_height/2.f - w_from_b;
-						};
-						std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
-							yb::mesh_boolean_operation(building_shp, w, yb::bool_operation::UNION);
+						transform_layout_element(
+							w, building_shp, 
+							{ 0,{0.5f + wd*sign, wy - (window_height/2+win_from_balcony+bh/2)/BUILDING_HEIGHT} }
+						);
+						std::tie(decorations.pos, decorations.triangles) = yb::mesh_boolean_operation(
+							decorations.pos, decorations.triangles,
+							w.pos, w.triangles,
+							yb::bool_operation::UNION
+						);
 					}
 				}
 
-				all_windows.vertex_tags = std::vector<yb::tagged_shape::tag>(all_windows.pos.size(), { 7,{0,0} });
+				decorations.vertex_tags = std::vector<yb::tagged_shape::tag>(decorations.pos.size(), { 7,{0,0} });
 				std::tie(building_shp.pos, building_shp.triangles, building_shp.vertex_tags) =
-					yb::mesh_boolean_operation(building_shp, all_windows, win_op);
+					yb::mesh_boolean_operation(building_shp, decorations, win_op);
 				ygl::log_info("    converting to faceted");
 				yb::convert_tagged_to_faceted(&building_shp);
 				building_shp.color.resize(building_shp.pos.size(), { 1,1,1,1 });

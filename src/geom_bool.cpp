@@ -105,19 +105,35 @@ mesh_boolean_operation(
 		auto tag2 = orig_shp->vertex_tags[orig_triangle.y];
 		auto tag3 = orig_shp->vertex_tags[orig_triangle.z];
 
-		// Pos of the spawning triangle
-		auto jpos1 = orig_shp->pos[orig_triangle.x];
-		auto jpos2 = orig_shp->pos[orig_triangle.y];
-		auto jpos3 = orig_shp->pos[orig_triangle.z];
-
-		// todo:
-		// use tagx and jposx to find bary coords of new rpos;
-		// --> tags.face_coords
-		ygl::vec2f face_coords[3] = { {0,0},{0,0},{0,0} };
-
 		// Take the majority of face ids if they're not all equals
 		auto face_tag = tag1.face_id == tag2.face_id || tag1.face_id == tag3.face_id ?
 			tag1.face_id : tag2.face_id;
+
+		// Pos of the spawning triangle
+		ygl::vec3f jpos[3] = {
+			orig_shp->pos[orig_triangle.x],
+			orig_shp->pos[orig_triangle.y],
+			orig_shp->pos[orig_triangle.z],
+		};
+
+		// Currently not working
+		ygl::vec2f face_coords[3] = { {0,0},{0,0},{0,0} };
+		for (int j = 0; j < 3; j++) {
+			const auto v2 = rpos[rpos.size()-3+j] - jpos[0];
+			const auto v0 = jpos[1] - jpos[0];
+			const auto v1 = jpos[2] - jpos[0];
+			using ygl::dot;
+			auto u =
+				(dot(v1, v1)*dot(v2, v0) - dot(v1, v0)*dot(v2, v1)) /
+				(dot(v0, v0)*dot(v1, v1) - dot(v0, v1)*dot(v1, v0));
+			auto v =
+				(dot(v0, v0)*dot(v2, v1) - dot(v0, v1)*dot(v2, v0)) /
+				(dot(v0, v0)*dot(v1, v1) - dot(v0, v1)*dot(v1, v0));
+			auto w = 1.f - u - v;
+			face_coords[j] = u*tag1.face_coord + v*tag2.face_coord + w*tag3.face_coord;
+		}
+		/////////////////////////////////
+
 		for (int j = 0; j < 3; j++) {
 			tags.push_back({ face_tag, face_coords[j] });
 		}
