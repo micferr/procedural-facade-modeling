@@ -33,7 +33,7 @@
 //		then use merge the resulting mesh on the target building
 
 // Balconies are represented through a mix of layout- and world-coordinates,
-// a better formalization is needed.
+// a better formalization may be needed (?)
 
 /// Includes
 
@@ -539,14 +539,14 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				}
 			);
 			if (ygl::draw_glwidgets_button(win, "compute windows") && !windows_computed) {
-				windows_computed = true;
-				ygl::log_info("carving windows...");
+				windows_computed = true; // Flag to prevent executing this operation more than once
+				ygl::log_info("placing windows...");
 
 				yb::tagged_shape decorations;
 
 				const float cube_size = 0.5f;
 
-				optimization_problem prob_h;
+				optimization_problem prob_h; // Vertical distribution of the window rows
 				prob_h.add_parameter(parameter("nw", 1.f, 20.f));
 				prob_h.add_parameter(parameter("sb", 2.f, 10.f));
 				prob_h.add_objective([&](const auto& params) {
@@ -559,7 +559,9 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 				particle_swarm(prob_h, 0.8f, 2.f, 2.f, 100, 100);
 
 				for (int s = 0; s < bs.num_sides(); s++) {
-					optimization_problem prob_w;
+					if (s == 0) continue;
+
+					optimization_problem prob_w; // Same as prob_h, for horizontal distribution
 					prob_w.add_parameter(parameter("nw", 1.f, 20.f));
 					prob_w.add_parameter(parameter("sb", 1.f, 10.f));
 					prob_w.add_objective([&](const auto& params) {
@@ -570,10 +572,12 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 					});
 					particle_swarm(prob_w, 0.8f, 2.f, 2.f, 300, 300);
 
+					// Todo (?): better handling of integer parameters
 					auto num_windows = int(prob_w.get_params()[0].get_rval());
 					auto num_floors = int(prob_h.get_params()[0].get_rval());
 					auto space_between_windows = prob_w.get_params()[1].get_rval();
 					auto space_between_floors = prob_h.get_params()[1].get_rval();
+					// Size of the building, minus size of the layout
 					auto space_from_edges =
 						(bs.sides[s].length() - num_windows*cube_size - (num_windows - 1)*space_between_windows)/2.f;
 					auto space_from_floor_ceiling =
@@ -581,25 +585,15 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 
 					for (int i = 0; i < num_windows; i++) {
 						for (int j = 0; j < num_floors; j++) {
-							if (s == 0) continue;
-
+							// Facade coordinates
 							auto x = (space_from_edges + cube_size / 2.f + (cube_size + space_between_windows)*i) / bs.sides[s].length();
 							auto y = (space_from_floor_ceiling + cube_size / 2.f + (cube_size + space_between_floors)*j) / BUILDING_HEIGHT;
-							/*auto clp = compute_layout_position(building_shp, s, { x,y });
-							if (!std::get<0>(clp)) {
-								continue;
-							} 
-							auto p = std::get<1>(clp);
-							ygl::shape c = yb::make_cube(c.quads, c.pos, cube_size);
-
-							// todo: generalize rotation (needs up vector)
-							auto n = std::get<2>(clp);
-							yb::rotate_y(c.pos, -yb::get_angle({n.x,n.z}));
-							for (auto& pos : c.pos) pos += p;*/
+							
+							// Window mesh
 							yb::tagged_shape c = yb::make_cube(c.quads, c.pos, cube_size, 7);
 							transform_layout_element(c, building_shp, { s,{x,y} });
 
-							// pos, triangles, tags
+							// Merge operation
 							std::tie(decorations.pos, decorations.triangles) = yb::mesh_boolean_operation(
 								decorations.pos, decorations.triangles,
 								c.pos, c.triangles,
@@ -645,6 +639,12 @@ inline void draw(ygl::glwindow* win, app_state* app) {
 						if (excess > 0) {
 							obj -= excess*100.f;
 						}
+						// Additional constraint penalties to be specified:
+						// balcony inside facade (left, right, bottom sides)
+						// window inside facade (top side)
+						//
+						// Some constraints are implied by the current parameter bounds
+						// (e.g. win_y should be in [0,1])
 
 						return obj;
 					});
